@@ -3,10 +3,10 @@
 # Eric's server bootstrap
 #
 # Quickstart on a fresh machine:
-#   curl -fsSL https://raw.githubusercontent.com/EricZQu/dotfiles/main/bootstrap.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/ericqu/dotfiles/main/bootstrap.sh | bash
 #
 # Or with overrides:
-#   REPO_URL=https://github.com/EricZQu/dotfiles.git \
+#   REPO_URL=https://github.com/ericqu/dotfiles.git \
 #   GITHUB_EMAIL=ericqu@berkeley.edu \
 #   bash bootstrap.sh
 #
@@ -27,7 +27,7 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-REPO_URL="${REPO_URL:-https://github.com/EricZQu/dotfiles.git}"
+REPO_URL="${REPO_URL:-https://github.com/ericqu/dotfiles.git}"
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
 GITHUB_EMAIL="${GITHUB_EMAIL:-ericqu@berkeley.edu}"
 
@@ -57,21 +57,42 @@ confirm()   {
 # Detect arch for binary downloads
 ARCH="$(uname -m)"
 case "$ARCH" in
-  x86_64|amd64)  ARCH_GNU=x86_64-unknown-linux-gnu;  ARCH_MUSL=x86_64-unknown-linux-musl ;;
-  aarch64|arm64) ARCH_GNU=aarch64-unknown-linux-gnu; ARCH_MUSL=aarch64-unknown-linux-musl ;;
-  *) warn "unknown arch '$ARCH' — some binary downloads may fail" ;;
+  x86_64|amd64)  ARCH_SHORT=x86_64;  ARCH_NICE=amd64 ;;
+  aarch64|arm64) ARCH_SHORT=aarch64; ARCH_NICE=arm64 ;;
+  *) warn "unknown arch '$ARCH' — some binary downloads may fail"
+     ARCH_SHORT="$ARCH"; ARCH_NICE="$ARCH" ;;
 esac
+
+# OS-aware Rust-toolchain target triple (used by eza, bat, ripgrep, delta releases)
+if [[ "$(uname -s)" = "Darwin" ]]; then
+  RELEASE_TAG="${ARCH_SHORT}-apple-darwin"
+else
+  RELEASE_TAG="${ARCH_SHORT}-unknown-linux-musl"
+fi
 
 LOCAL_BIN="$HOME/.local/bin"
 mkdir -p "$LOCAL_BIN"
 case ":$PATH:" in *":$LOCAL_BIN:"*) ;; *) export PATH="$LOCAL_BIN:$PATH" ;; esac
 
-# Try sudo apt install, fall back silently
-apt_install() {
-  have_sudo || return 1
-  sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq >/dev/null 2>&1 || true
-  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$@" >/dev/null 2>&1
+# Cross-platform package install: brew on macOS, apt on Linux (with sudo).
+# Returns 0 on success, 1 if no usable package manager.
+pkg_install() {
+  if is_macos; then
+    if have brew; then
+      brew install "$@" >/dev/null 2>&1
+    else
+      return 1
+    fi
+  elif have_sudo; then
+    sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq >/dev/null 2>&1 || true
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$@" >/dev/null 2>&1
+  else
+    return 1
+  fi
 }
+
+# Backwards-compat alias; many install_* functions still call this name.
+apt_install() { pkg_install "$@"; }
 
 # Generic: download a tarball from a URL, extract a single binary into ~/.local/bin
 # usage: install_release_binary <name> <url> <path-inside-archive> [archive-type]
@@ -174,9 +195,10 @@ install_starship() {
 # ============================================================================
 install_jq() {
   have jq && return
-  if apt_install jq; then return; fi
+  pkg_install jq && return
+  is_macos && { warn "jq: install Homebrew, then 'brew install jq'"; return 1; }
   install_release_binary jq \
-    "https://github.com/jqlang/jq/releases/latest/download/jq-linux-${ARCH/aarch64/arm64}" "" raw
+    "https://github.com/jqlang/jq/releases/latest/download/jq-linux-${ARCH_NICE}" "" raw
 }
 
 install_fzf() {
@@ -202,48 +224,50 @@ install_zoxide() {
 install_eza() {
   have eza && return
   log "installing eza"
-  apt_install eza && return || true
-  # GH releases (musl static)
+  pkg_install eza && return
+  is_macos && { warn "eza: install Homebrew, then 'brew install eza'"; return 1; }
   install_release_binary eza \
-    "https://github.com/eza-community/eza/releases/latest/download/eza_${ARCH_MUSL}.tar.gz" eza
+    "https://github.com/eza-community/eza/releases/latest/download/eza_${RELEASE_TAG}.tar.gz" eza
 }
 
 install_bat() {
   have bat && return
   log "installing bat"
-  apt_install bat && {
+  if pkg_install bat; then
     # Debian/Ubuntu rename to batcat to avoid conflict
     have batcat && ! have bat && ln -sfn "$(command -v batcat)" "$LOCAL_BIN/bat"
     return
-  } || true
-  # Fall back to GH releases
+  fi
+  is_macos && { warn "bat: install Homebrew, then 'brew install bat'"; return 1; }
   local ver; ver="$(curl -fsSL https://api.github.com/repos/sharkdp/bat/releases/latest | grep -oE '"tag_name":\s*"v[^"]+"' | head -1 | grep -oE 'v[0-9.]+')"
   [[ -z "$ver" ]] && { warn "couldn't get bat version"; return 1; }
   install_release_binary bat \
-    "https://github.com/sharkdp/bat/releases/download/${ver}/bat-${ver}-${ARCH_MUSL}.tar.gz" \
-    "bat-${ver}-${ARCH_MUSL}/bat"
+    "https://github.com/sharkdp/bat/releases/download/${ver}/bat-${ver}-${RELEASE_TAG}.tar.gz" \
+    "bat-${ver}-${RELEASE_TAG}/bat"
 }
 
 install_ripgrep() {
   have rg && return
   log "installing ripgrep"
-  apt_install ripgrep && return || true
+  pkg_install ripgrep && return
+  is_macos && { warn "ripgrep: install Homebrew, then 'brew install ripgrep'"; return 1; }
   local ver; ver="$(curl -fsSL https://api.github.com/repos/BurntSushi/ripgrep/releases/latest | grep -oE '"tag_name":\s*"[^"]+"' | head -1 | grep -oE '[0-9.]+')"
   [[ -z "$ver" ]] && { warn "couldn't get ripgrep version"; return 1; }
   install_release_binary rg \
-    "https://github.com/BurntSushi/ripgrep/releases/download/${ver}/ripgrep-${ver}-${ARCH_MUSL}.tar.gz" \
-    "ripgrep-${ver}-${ARCH_MUSL}/rg"
+    "https://github.com/BurntSushi/ripgrep/releases/download/${ver}/ripgrep-${ver}-${RELEASE_TAG}.tar.gz" \
+    "ripgrep-${ver}-${RELEASE_TAG}/rg"
 }
 
 install_delta() {
   have delta && return
   log "installing git-delta"
-  apt_install git-delta && return || true
+  pkg_install git-delta && return
+  is_macos && { warn "delta: install Homebrew, then 'brew install git-delta'"; return 1; }
   local ver; ver="$(curl -fsSL https://api.github.com/repos/dandavison/delta/releases/latest | grep -oE '"tag_name":\s*"[^"]+"' | head -1 | grep -oE '[0-9.]+')"
   [[ -z "$ver" ]] && { warn "couldn't get delta version"; return 1; }
   install_release_binary delta \
-    "https://github.com/dandavison/delta/releases/download/${ver}/delta-${ver}-${ARCH_MUSL}.tar.gz" \
-    "delta-${ver}-${ARCH_MUSL}/delta"
+    "https://github.com/dandavison/delta/releases/download/${ver}/delta-${ver}-${RELEASE_TAG}.tar.gz" \
+    "delta-${ver}-${RELEASE_TAG}/delta"
 }
 
 install_tools() {
@@ -364,8 +388,20 @@ install_hf() {
   [[ "${SKIP_HF:-0}" = "1" ]] && return
   section "huggingface cli"
   if have hf; then ok "hf cli present"; return; fi
-  curl -LsSf https://hf.co/cli/install.sh | bash >/dev/null 2>&1 || warn "hf install failed"
-  have hf && ok "hf installed"
+
+  # Official installer: works on Linux, but spotty on macOS as of 2026
+  if curl -LsSf https://hf.co/cli/install.sh | bash 2>&1 | tail -5; then
+    have hf && { ok "hf installed"; return; }
+  fi
+
+  # Fallback: uv tool install
+  if have uv; then
+    log "official installer didn't yield 'hf' on PATH; trying 'uv tool install huggingface-hub'"
+    uv tool install --quiet "huggingface_hub[cli]" >/dev/null 2>&1 || true
+    have hf && { ok "hf installed via uv tool"; return; }
+  fi
+
+  warn "hf install failed. Try: pip install -U 'huggingface_hub[cli]'"
 }
 
 install_claude_code() {
