@@ -1,9 +1,11 @@
-# Plugins loaded by antidote; compiled into ~/.zsh_plugins.zsh on first run.
-# Format: <github-user>/<repo> [annotations]
+# Sets up OMZ env ($ZSH, $ZSH_CACHE_DIR, etc.) so OMZ plugins work via antidote.
+# MUST be before any ohmyzsh/ohmyzsh entries.
+getantidote/use-omz
 
-# ─── OMZ library + selected plugins (loaded as fragments) ──────────────────
+# OMZ library (compinit, themes infra)
 ohmyzsh/ohmyzsh path:lib
 
+# OMZ plugins
 ohmyzsh/ohmyzsh path:plugins/git
 ohmyzsh/ohmyzsh path:plugins/extract
 ohmyzsh/ohmyzsh path:plugins/copypath
@@ -16,11 +18,10 @@ ohmyzsh/ohmyzsh path:plugins/python
 ohmyzsh/ohmyzsh path:plugins/pip
 ohmyzsh/ohmyzsh path:plugins/history
 ohmyzsh/ohmyzsh path:plugins/cp
+# macos plugin self-guards on $OSTYPE so it's a no-op on Linux
+ohmyzsh/ohmyzsh path:plugins/macos
 
-# macOS-only plugin (antidote's "if" annotation)
-ohmyzsh/ohmyzsh path:plugins/macos conditional:[[ "$OSTYPE" == darwin* ]]
-
-# ─── third-party (must come AFTER OMZ lib so they see compinit) ────────────
+# third-party (after OMZ lib so compinit is available)
 zsh-users/zsh-autosuggestions
 Aloxaf/fzf-tab
 zdharma-continuum/fast-syntax-highlighting kind:defer

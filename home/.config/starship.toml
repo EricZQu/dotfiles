@@ -91,11 +91,19 @@ style    = "dim white"
 time_format = "%H:%M"
 
 # Disable noisy/irrelevant modules globally
-[aws]      disabled = true
-[gcloud]   disabled = true
-[nodejs]   disabled = true
-[package]  disabled = true
-[rust]     disabled = true
-[golang]   disabled = true
-[java]     disabled = true
-[ruby]     disabled = true
+[aws]
+disabled = true
+[gcloud]
+disabled = true
+[nodejs]
+disabled = true
+[package]
+disabled = true
+[rust]
+disabled = true
+[golang]
+disabled = true
+[java]
+disabled = true
+[ruby]
+disabled = true
