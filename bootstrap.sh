@@ -559,6 +559,26 @@ set_zsh_default() {
   fi
 }
 
+
+# ============================================================================
+# 10b. merge statusLine config into ~/.claude/settings.json (CC owns this file,
+#      so we don't symlink it — we patch it idempotently).
+# ============================================================================
+patch_claude_settings() {
+  section "claude code statusline"
+  local f="$HOME/.claude/settings.json"
+  mkdir -p "$HOME/.claude"
+  if ! have jq; then
+    warn "jq not installed; skipping settings.json patch (statusline won't display)"
+    return
+  fi
+  [[ -f "$f" ]] || echo '{}' > "$f"
+  local tmp; tmp="$(mktemp)"
+  jq '.statusLine = {type: "command", command: "bash ~/.claude/statusline.sh", padding: 0}' \
+    "$f" > "$tmp" && mv "$tmp" "$f"
+  ok "patched $f with statusLine -> ~/.claude/statusline.sh"
+}
+
 # ============================================================================
 # main
 # ============================================================================
@@ -584,6 +604,7 @@ main() {
   install_globus
   setup_github_ssh
   link_dotfiles
+  patch_claude_settings
   write_bashrc_trampoline
   set_zsh_default
 
