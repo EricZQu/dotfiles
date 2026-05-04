@@ -11,7 +11,7 @@ zsh + antidote + starship + claude-code + uv + atuin + direnv + mosh
 On a fresh machine:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ericqu/dotfiles/main/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/EricZQu/dotfiles/main/bootstrap.sh | bash
 ```
 
 That's it. The script:
@@ -59,7 +59,7 @@ Pass these as env vars when running bootstrap, e.g. `SKIP_GLOBUS=1 bash bootstra
 
 | Flag | Effect |
 |---|---|
-| `REPO_URL` | git URL of this repo (default: `https://github.com/ericqu/dotfiles.git`) |
+| `REPO_URL` | git URL of this repo (default: `https://github.com/EricZQu/dotfiles.git`) |
 | `DOTFILES_DIR` | clone target (default: `~/.dotfiles`) |
 | `GITHUB_EMAIL` | email for the SSH key (default: `ericqu@berkeley.edu`) |
 | `ASSUME_YES=1` | non-interactive: skip atuin register, ssh keygen prompts, globus auth |

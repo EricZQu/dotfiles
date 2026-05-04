@@ -3,7 +3,7 @@
 # Eric's server bootstrap
 #
 # Quickstart on a fresh machine:
-#   curl -fsSL https://raw.githubusercontent.com/ericqu/dotfiles/main/bootstrap.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/EricZQu/dotfiles/main/bootstrap.sh | bash
 #
 # Or with overrides:
 #   REPO_URL=https://github.com/EricZQu/dotfiles.git \
