@@ -34,20 +34,32 @@ fi
 if command -v starship >/dev/null 2>&1; then
   eval "$(starship init zsh)"
 
-  # Transient prompt: replaces previous prompts with a minimal version after
-  # you press Enter, so scrollback stays clean. Native to p10k; emulated here.
-  function _transient_prompt_widget() {
-    _transient_prompt_active=1
-    zle reset-prompt
-    unset _transient_prompt_active
-    zle accept-line
-  }
-  zle -N _transient_prompt_widget
-  bindkey "^M" _transient_prompt_widget   # Enter
+  # Save starship's PROMPT/RPROMPT (which are command-substitution strings,
+  # not rendered text — zsh re-runs the substitutions every prompt cycle).
+  _starship_full_prompt="$PROMPT"
+  _starship_full_rprompt="$RPROMPT"
 
-  # Hooks starship picks up automatically
-  function starship_transient_prompt_func() { starship module character; }
-  function starship_transient_rprompt_func() { :; }
+  # Before each new prompt, restore PROMPT to the substitution string.
+  # This undoes our transient swap so the next prompt is full again.
+  _starship_restore_prompt() {
+    PROMPT="$_starship_full_prompt"
+    RPROMPT="$_starship_full_rprompt"
+  }
+  autoload -Uz add-zsh-hook
+  add-zsh-hook precmd _starship_restore_prompt
+
+  # On line submit, swap to the minimal transient prompt and redraw,
+  # so scrollback shows just ❯ <command>.
+  _starship_transient() {
+    if [[ $PROMPT != '%F{green}❯%f ' ]]; then
+      PROMPT='%F{green}❯%f'
+      RPROMPT=''
+      zle .reset-prompt 2>/dev/null
+    fi
+  }
+  zle-line-finish() { _starship_transient }
+  zle -N zle-line-finish
+  TRAPINT() { _starship_transient; return $(( 128 + $1 )) }
 fi
 
 # ─── modern CLI integrations ───────────────────────────────────────────────

@@ -6,7 +6,6 @@ command_timeout = 1500
 
 # Two-line prompt: info on top, character on bottom.
 format = """
-[╭─](fg:cyan)\
 $username\
 $hostname\
 $directory\
@@ -15,9 +14,8 @@ $git_status\
 $python\
 $conda\
 $cmd_duration
-[╰─](fg:cyan)$character"""
+$character"""
 
-right_format = "$jobs$time"
 
 [character]
 success_symbol = "[❯](bold green)"
