@@ -299,9 +299,17 @@ install_atuin() {
   [[ "${SKIP_ATUIN:-0}" = "1" ]] && return
   section "atuin"
   if have atuin; then ok "atuin present: $(atuin --version)"; else
-    log "installing atuin"
-    curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh -s -- --no-modify-path >/dev/null
-    # The installer puts it at ~/.atuin/bin/atuin
+    log "installing atuin (interactive — answer prompts as they appear)"
+    if interactive; then
+      # Pass terminal through so the installer can prompt
+      curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh \
+        | sh -s -- --no-modify-path </dev/tty
+    else
+      # Non-interactive: feed EOF on stdin so the installer takes defaults
+      curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh \
+        | sh -s -- --no-modify-path </dev/null >/dev/null 2>&1
+    fi
+    # The installer puts atuin at ~/.atuin/bin/atuin
     [[ -x "$HOME/.atuin/bin/atuin" ]] && ln -sfn "$HOME/.atuin/bin/atuin" "$LOCAL_BIN/atuin"
   fi
 
