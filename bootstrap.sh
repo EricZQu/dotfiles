@@ -298,20 +298,28 @@ install_direnv() {
 install_atuin() {
   [[ "${SKIP_ATUIN:-0}" = "1" ]] && return
   section "atuin"
-  if have atuin; then ok "atuin present: $(atuin --version)"; else
+
+  if have atuin; then
+    ok "atuin present: $(atuin --version)"
+  else
     log "installing atuin"
     local _tmp; _tmp="$(mktemp)"
-    curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh -o "$_tmp"
-    if interactive; then
-      sh "$_tmp" --no-modify-path </dev/tty
+    if curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh -o "$_tmp"; then
+      if interactive; then
+        sh "$_tmp" --no-modify-path </dev/tty || warn "atuin installer exited non-zero"
+      else
+        sh "$_tmp" --no-modify-path </dev/null >/dev/null 2>&1 || warn "atuin installer exited non-zero"
+      fi
     else
-      sh "$_tmp" --no-modify-path </dev/null >/dev/null 2>&1
+      warn "could not download atuin installer"
     fi
     rm -f "$_tmp"
     [[ -x "$HOME/.atuin/bin/atuin" ]] && ln -sfn "$HOME/.atuin/bin/atuin" "$LOCAL_BIN/atuin"
   fi
-    # The installer puts atuin at ~/.atuin/bin/atuin
-    [[ -x "$HOME/.atuin/bin/atuin" ]] && ln -sfn "$HOME/.atuin/bin/atuin" "$LOCAL_BIN/atuin"
+
+  if ! have atuin; then
+    warn "atuin not on PATH after install; skipping login flow"
+    return
   fi
 
   # Import existing zsh history into atuin DB (safe to re-run; atuin dedupes)
@@ -322,7 +330,7 @@ install_atuin() {
     return
   fi
 
-  # Check if already logged in by trying a sync
+  # Check if already logged in
   if atuin status 2>&1 | grep -qi 'logged in'; then
     ok "atuin already logged in on this machine"
     return
