@@ -117,13 +117,13 @@ probe_gpu() {
     *)                   model="$(echo "$model" | awk '{print $NF}')" ;;
   esac
   if (( n == active )); then
-    # all cards busy: show count×model + util + mem
-    printf '%d×%s %d%% %dG' "$n" "$model" "$avg" "$(( sum_mu / 1024 ))"
+    # all cards busy: just count×model util%
+    printf '%d×%s %d%%' "$n" "$model" "$avg"
   else
-    # mixed: show A/N active, util across active only, total mem used
+    # mixed: active/total×model util-of-active%
     local active_avg=0
     (( active > 0 )) && active_avg=$(( sum_util / active ))
-    printf '%d/%d×%s %d%% %dG' "$active" "$n" "$model" "$active_avg" "$(( sum_mu / 1024 ))"
+    printf '%d/%d×%s %d%%' "$active" "$n" "$model" "$active_avg"
   fi
 }
 
