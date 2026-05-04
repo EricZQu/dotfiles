@@ -235,6 +235,17 @@ install_ripgrep() {
     "ripgrep-${ver}-${ARCH_MUSL}/rg"
 }
 
+install_delta() {
+  have delta && return
+  log "installing git-delta"
+  apt_install git-delta && return || true
+  local ver; ver="$(curl -fsSL https://api.github.com/repos/dandavison/delta/releases/latest | grep -oE '"tag_name":\s*"[^"]+"' | head -1 | grep -oE '[0-9.]+')"
+  [[ -z "$ver" ]] && { warn "couldn't get delta version"; return 1; }
+  install_release_binary delta \
+    "https://github.com/dandavison/delta/releases/download/${ver}/delta-${ver}-${ARCH_MUSL}.tar.gz" \
+    "delta-${ver}-${ARCH_MUSL}/delta"
+}
+
 install_tools() {
   [[ "${SKIP_TOOLS:-0}" = "1" ]] && return
   section "modern CLI tools"
@@ -244,6 +255,7 @@ install_tools() {
   install_eza     || warn "eza install failed"
   install_bat     || warn "bat install failed"
   install_ripgrep || warn "ripgrep install failed"
+  install_delta   || warn "delta install failed (git diff falls back to default pager)"
 }
 
 # ============================================================================

@@ -41,6 +41,7 @@ dotfiles/
 └── home/                         # mirrors $HOME; everything here gets symlinked
     ├── .zshrc
     ├── .zsh_plugins.txt          # antidote plugin list (compiled to .zsh_plugins.zsh on first shell)
+    ├── .gitconfig                # identity + modern git defaults + delta config
     ├── .tmux.conf
     └── .config/
         ├── starship.toml
@@ -98,6 +99,7 @@ shell — antidote rebuilds the compiled bundle automatically.
 | eza | ls | `ls`, `ll`, `la`, `lt` aliases |
 | bat | cat | `cat` alias (no paging, plain style) |
 | ripgrep | grep -r | `rg` (with `--hidden` and `!.git`) |
+| delta | diff pager | git diff/log/show (configured in .gitconfig) |
 | zoxide | cd | `cd foo` jumps to most-used dir matching foo (overrides cd!) |
 | fzf | — | `Ctrl+T` for files, `Ctrl+R` for history (overridden by atuin) |
 | fzf-tab | tab menu | tab now opens a fuzzy interactive picker |
@@ -121,6 +123,30 @@ uv add torch numpy           # add dependencies
 ```
 
 The `layout_uv` shim is in `home/.config/direnv/direnvrc`.
+
+### Git config
+
+`~/.gitconfig` is identity (`Eric Qu / ericqu@berkeley.edu / EricZQu`) plus
+modern defaults: `pull.ff = only`, `push.autoSetupRemote = true`,
+`fetch.prune = true`, `rerere.enabled`, `merge.conflictStyle = zdiff3`,
+histogram diff, and delta as the pager.
+
+Per-machine overrides go in `~/.gitconfig.local` (untracked, sourced via
+`[include]` from the main file). Useful for:
+
+```ini
+# different identity for work commits
+[user]
+	email = ericqu@meta.com
+
+# proxy for restricted networks
+[http]
+	proxy = http://proxy.internal:8080
+```
+
+To enable SSH commit signing (uses your existing `~/.ssh/id_ed25519`),
+uncomment the section at the bottom of `.gitconfig` and add the same key
+to GitHub at https://github.com/settings/keys with type **Signing Key**.
 
 ### Slurm helpers
 

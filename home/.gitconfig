@@ -1,0 +1,123 @@
+# ============================================================================
+# ~/.gitconfig
+# Modern git config; delta-aware (falls back gracefully if delta missing).
+# ============================================================================
+
+[user]
+	name = Eric Qu
+	email = ericqu@berkeley.edu
+
+[github]
+	user = EricZQu
+
+[init]
+	defaultBranch = main
+
+# ─── pull/push/fetch ────────────────────────────────────────────────────────
+[pull]
+	ff = only                  # never auto-merge; use `git pull --rebase` explicitly
+
+[push]
+	default = simple
+	autoSetupRemote = true     # `git push` works on a new branch w/o --set-upstream
+	followTags = true
+
+[fetch]
+	prune = true               # remove remote-tracking branches that no longer exist
+	pruneTags = true
+	fsckobjects = true         # validate objects on receive (security)
+
+[transfer]
+	fsckobjects = true
+
+[receive]
+	fsckobjects = true
+
+# ─── workflow niceties ──────────────────────────────────────────────────────
+[rerere]
+	enabled = true             # remember conflict resolutions
+	autoUpdate = true
+
+[rebase]
+	autoStash = true           # auto-stash dirty tree before rebase
+	autoSquash = true          # respect `fixup!` and `squash!` commit prefixes
+	updateRefs = true          # update branches stacked on the rebased one
+
+[branch]
+	sort = -committerdate      # `git branch` shows most recent first
+
+[column]
+	ui = auto                  # multi-column output for branch/tag listings
+
+[help]
+	autocorrect = prompt       # `git statsu` → "did you mean status?"
+
+[log]
+	date = iso
+
+# ─── diff/merge ─────────────────────────────────────────────────────────────
+[diff]
+	algorithm = histogram      # better diff algorithm than the default 'myers'
+	colorMoved = default       # highlight moved lines distinctly
+	mnemonicPrefix = true      # i/w/c instead of a/b in diff headers
+	renames = true
+
+[merge]
+	conflictStyle = zdiff3     # show common ancestor in conflict markers (git ≥ 2.35)
+
+# ─── delta (https://github.com/dandavison/delta) ────────────────────────────
+# If delta isn't installed git falls back to its default pager.
+[core]
+	autocrlf = input
+	pager = delta
+
+[interactive]
+	diffFilter = delta --color-only
+
+[delta]
+	navigate = true            # n/N to jump between hunks in the pager
+	light = false              # dark theme
+	line-numbers = true
+	side-by-side = false       # set true if you have a wide terminal
+	syntax-theme = Monokai Extended
+
+# ─── aliases ────────────────────────────────────────────────────────────────
+[alias]
+	s = status -sb
+	l = log --oneline --graph --decorate -20
+	la = log --oneline --graph --decorate --all -20
+	co = checkout
+	br = branch
+	cm = commit -m
+	cma = commit -am
+	amend = commit --amend --no-edit
+	wip = !git add -A && git commit -m "wip"
+	unwip = reset HEAD~1
+	undo = reset --soft HEAD~1
+	pf = push --force-with-lease
+	root = rev-parse --show-toplevel
+	contributors = shortlog --summary --numbered
+	# Show files changed in last commit
+	last = log -1 --stat
+	# Cleanup merged branches
+	cleanup = !git branch --merged main | grep -v '^[ *]*main$' | xargs -r git branch -d
+
+# ─── machine-local overrides (untracked, gitignored) ────────────────────────
+# Put per-machine stuff (different email for work, signing keys, proxy)
+# in ~/.gitconfig.local — git includes it after this file
+[include]
+	path = ~/.gitconfig.local
+
+# ─── optional: SSH-based commit signing ─────────────────────────────────────
+# Uncomment to sign commits with your existing GitHub SSH key.
+# Requires git >= 2.34. After enabling, also tell GitHub at:
+#   https://github.com/settings/keys (add key with type=signing).
+#
+# [user]
+#	signingkey = ~/.ssh/id_ed25519.pub
+# [gpg]
+#	format = ssh
+# [commit]
+#	gpgsign = true
+# [tag]
+#	gpgsign = true
