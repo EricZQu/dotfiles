@@ -128,8 +128,9 @@ The `layout_uv` shim is in `home/.config/direnv/direnvrc`.
 
 `~/.gitconfig` is identity (`Eric Qu / ericqu@berkeley.edu / EricZQu`) plus
 modern defaults: `pull.ff = only`, `push.autoSetupRemote = true`,
-`fetch.prune = true`, `rerere.enabled`, `merge.conflictStyle = zdiff3`,
-histogram diff, and delta as the pager.
+`fetch.prune = true`, `rerere.enabled`, histogram diff, and delta as the
+pager. `merge.conflictStyle` is set to `diff3` by default and upgraded to
+`zdiff3` by `bootstrap.sh` when git ≥ 2.35 (written to `~/.gitconfig.local`).
 
 Per-machine overrides go in `~/.gitconfig.local` (untracked, sourced via
 `[include]` from the main file). Useful for:

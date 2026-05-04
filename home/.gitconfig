@@ -63,7 +63,7 @@
 	renames = true
 
 [merge]
-	conflictStyle = zdiff3     # show common ancestor in conflict markers (git ≥ 2.35)
+	conflictStyle = diff3      # show common ancestor in conflict markers (zdiff3 needs git ≥ 2.35)
 
 # ─── delta (https://github.com/dandavison/delta) ────────────────────────────
 # If delta isn't installed git falls back to its default pager.

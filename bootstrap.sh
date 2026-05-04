@@ -643,6 +643,28 @@ set_zsh_default() {
 
 
 # ============================================================================
+# 10a. version-gated gitconfig keys → ~/.gitconfig.local
+#      Tracked .gitconfig is conservative (works on old git); bootstrap upgrades
+#      to features that need a newer git, written to the per-machine include.
+# ============================================================================
+setup_gitconfig_local() {
+  section "gitconfig (version-gated)"
+  if ! have git; then
+    warn "git not on PATH; skipping version-gated gitconfig"
+    return
+  fi
+  local v; v="$(git --version | awk '{print $3}')"
+  local local_cfg="$HOME/.gitconfig.local"
+  # merge.conflictStyle=zdiff3 needs git >= 2.35; older git aborts on it.
+  local style="diff3"
+  if printf '%s\n%s\n' "2.35" "$v" | sort -V -C; then
+    style="zdiff3"
+  fi
+  git config --file "$local_cfg" merge.conflictstyle "$style"
+  ok "git $v → merge.conflictstyle=$style (in $local_cfg)"
+}
+
+# ============================================================================
 # 10b. merge statusLine config into ~/.claude/settings.json (CC owns this file,
 #      so we don't symlink it — we patch it idempotently).
 # ============================================================================
@@ -686,6 +708,7 @@ main() {
   install_globus
   setup_github_ssh
   link_dotfiles
+  setup_gitconfig_local
   patch_claude_settings
   write_bashrc_trampoline
   set_zsh_default
