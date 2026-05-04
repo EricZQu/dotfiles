@@ -356,25 +356,38 @@ install_mosh() {
   [[ "${SKIP_MOSH:-0}" = "1" ]] && return
   section "mosh"
   if have mosh-server || have mosh; then ok "mosh present"; return; fi
-  if apt_install mosh; then ok "installed mosh via apt"; return; fi
-  if is_macos && have brew; then brew install mosh && return; fi
 
-  # Try conda-forge if conda is around — clean way to get mosh without sudo
-  if have conda; then
-    log "trying mosh from conda-forge"
-    if conda install -y -n base -c conda-forge mosh >/dev/null 2>&1; then
-      ok "installed mosh via conda-forge"
+  # 1. native package manager (apt with sudo, brew on Mac)
+  if pkg_install mosh; then ok "installed mosh via package manager"; return; fi
+
+  # 2. pixi (conda-forge installer, no sudo, no existing conda needed)
+  install_pixi_if_needed() {
+    have pixi && return 0
+    log "installing pixi (single binary, no sudo) to provide mosh"
+    curl -fsSL https://pixi.sh/install.sh | bash >/dev/null 2>&1 || return 1
+    [[ -x "$HOME/.pixi/bin/pixi" ]] && {
+      export PATH="$HOME/.pixi/bin:$PATH"
+      ln -sfn "$HOME/.pixi/bin/pixi" "$LOCAL_BIN/pixi"
+    }
+    have pixi
+  }
+  if install_pixi_if_needed; then
+    if pixi global install mosh >/dev/null 2>&1; then
+      [[ -x "$HOME/.pixi/bin/mosh" ]] && ln -sfn "$HOME/.pixi/bin/mosh" "$LOCAL_BIN/mosh"
+      [[ -x "$HOME/.pixi/bin/mosh-server" ]] && ln -sfn "$HOME/.pixi/bin/mosh-server" "$LOCAL_BIN/mosh-server"
+      [[ -x "$HOME/.pixi/bin/mosh-client" ]] && ln -sfn "$HOME/.pixi/bin/mosh-client" "$LOCAL_BIN/mosh-client"
+      ok "installed mosh via pixi"
       return
     fi
   fi
 
-  # Build from source as last resort
+  # 3. source build (last resort — needs autoconf/protoc available)
   log "attempting source build of mosh into ~/.local"
   local need=(autoconf automake make g++ pkg-config protoc)
   local missing=()
   for t in "${need[@]}"; do have "$t" || missing+=("$t"); done
   if (( ${#missing[@]} )); then
-    warn "mosh source build needs: ${missing[*]} — skipping. Install via your sysadmin or use plain ssh."
+    warn "mosh source build needs: ${missing[*]} — skipping. Plain ssh works fine."
     return
   fi
   local tmp; tmp="$(mktemp -d)"
@@ -386,7 +399,7 @@ install_mosh() {
     ./configure --prefix="$HOME/.local" >/dev/null
     make -j"$(nproc 2>/dev/null || echo 2)" >/dev/null
     make install >/dev/null
-  ) && ok "built mosh from source" || warn "mosh build failed; you can use plain ssh"
+  ) && ok "built mosh from source" || warn "mosh build failed; plain ssh works fine"
   rm -rf "$tmp"
 }
 
