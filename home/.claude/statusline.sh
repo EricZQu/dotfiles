@@ -86,30 +86,45 @@ probe_gpu() {
   local raw; raw="$(nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total \
                                 --format=csv,noheader,nounits 2>/dev/null)"
   [[ -z "$raw" ]] && return
-  local n=0 sum_util=0 sum_mu=0 sum_mt=0 model
+  local n=0 active=0 sum_util=0 sum_mu=0 sum_mt=0 model
   while IFS=, read -r u mu mt; do
     u="${u// /}"; mu="${mu// /}"; mt="${mt// /}"
     [[ -z "$u" ]] && continue
     n=$(( n + 1 )); sum_util=$(( sum_util + u ))
     sum_mu=$(( sum_mu + mu )); sum_mt=$(( sum_mt + mt ))
+    (( u > 5 )) && active=$(( active + 1 ))
   done <<< "$raw"
   (( n == 0 )) && return
   local avg=$(( sum_util / n ))
+  local mem_pct=0
+  (( sum_mt > 0 )) && mem_pct=$(( sum_mu * 100 / sum_mt ))
   # Try to grab GPU model (first card only) for a tag like "H100"
   model="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)"
   # Trim "NVIDIA " prefix and reduce to short name
   model="${model#NVIDIA }"
   case "$model" in
-    *H100*) model=H100 ;;
-    *A100*) model=A100 ;;
-    *A6000*) model=A6000 ;;
-    *V100*) model=V100 ;;
-    *3090*) model=3090 ;;
-    *4090*) model=4090 ;;
-    *L40*)  model=L40 ;;
-    *)      model="$(echo "$model" | awk '{print $1}')" ;;
+    *H100*)              model=H100 ;;
+    *H200*)              model=H200 ;;
+    *A100*)              model=A100 ;;
+    *A6000*)             model=A6000 ;;
+    *V100*)              model=V100 ;;
+    *L40S*)              model=L40S ;;
+    *L40*)               model=L40 ;;
+    *RTX*6000*Ada*)      model=RTX6000Ada ;;
+    *RTX*5090*)          model=5090 ;;
+    *RTX*4090*)          model=4090 ;;
+    *RTX*3090*)          model=3090 ;;
+    *)                   model="$(echo "$model" | awk '{print $NF}')" ;;
   esac
-  printf '%d×%s %d%%' "$n" "$model" "$avg"
+  if (( n == active )); then
+    # all cards busy: show count×model + util + mem
+    printf '%d×%s %d%% %dG' "$n" "$model" "$avg" "$(( sum_mu / 1024 ))"
+  else
+    # mixed: show A/N active, util across active only, total mem used
+    local active_avg=0
+    (( active > 0 )) && active_avg=$(( sum_util / active ))
+    printf '%d/%d×%s %d%% %dG' "$active" "$n" "$model" "$active_avg" "$(( sum_mu / 1024 ))"
+  fi
 }
 
 probe_slurm() {
