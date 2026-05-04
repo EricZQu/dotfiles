@@ -1,0 +1,18 @@
+# ============================================================================
+# ~/.config/direnv/direnvrc
+# Custom layouts. Use in your project's .envrc with: `layout uv`
+# ============================================================================
+
+# layout_uv: auto-create .venv via uv if missing, then activate.
+# Inspired by direnv community wiki and astral-sh/uv discussions.
+layout_uv() {
+  local venv="${UV_PROJECT_ENVIRONMENT:-$PWD/.venv}"
+  if [[ ! -d "$venv" ]]; then
+    log_status "no venv found; creating with: uv venv $venv"
+    uv venv "$venv"
+  fi
+  VIRTUAL_ENV="$venv"
+  PATH_add "$venv/bin"
+  export VIRTUAL_ENV
+  export UV_ACTIVE=1
+}

@@ -1,0 +1,44 @@
+# ~/.config/atuin/config.toml
+# Reference: https://docs.atuin.sh/configuration/config/
+
+# How history is searched: prefix | fulltext | fuzzy | skim
+search_mode = "fuzzy"
+
+# Filter mode default for searches:
+#   global    = all your hosts
+#   host      = current host only
+#   session   = current shell session
+#   directory = current directory
+filter_mode = "global"
+
+# Cycle through filter modes with Ctrl-R
+filter_mode_shell_up_key_binding = "session"
+
+# UI style
+style = "compact"
+inline_height = 20
+show_preview = true
+show_help = true
+
+# Sync (against the default https://api.atuin.sh server unless overridden)
+auto_sync = true
+update_check = false      # silence the update nag — we update via bootstrap
+sync_frequency = "10m"
+
+# Don't record plain `password`, `token`, ssh secrets…
+secrets_filter = true
+
+# Skip recording specific commands (regex)
+history_filter = [
+  "^secret-",
+  "^export.*KEY",
+  "^export.*TOKEN",
+]
+
+# Keep both the short cwd basename and full path
+[stats]
+common_subcommands = [
+  "git", "cargo", "go", "uv", "pip", "docker", "kubectl", "ssh", "tmux",
+  "scontrol", "squeue", "sbatch", "srun"
+]
+common_prefix = ["sudo"]
