@@ -52,7 +52,7 @@ if command -v starship >/dev/null 2>&1; then
   # so scrollback shows just ❯ <command>.
   _starship_transient() {
     if [[ $PROMPT != '%F{green}❯%f ' ]]; then
-      PROMPT='%F{green}❯%f'
+      PROMPT='%F{green}❯%f '
       RPROMPT=''
       zle .reset-prompt 2>/dev/null
     fi
