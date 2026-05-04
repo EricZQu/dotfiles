@@ -579,9 +579,18 @@ set_zsh_default() {
   local zsh_path; zsh_path="$(command -v zsh || true)"
   [[ -z "$zsh_path" ]] && { warn "zsh not found, skipping"; return; }
   if [[ "${SHELL:-}" = "$zsh_path" ]]; then ok "zsh already default"; return; fi
+
+  # chsh prompts for your user password (not sudo). On clusters with LDAP/SSO,
+  # users typically don't have a local password, so chsh hangs forever.
+  # Skip chsh unless we have sudo (which means root can chsh without password).
+  if ! have_sudo; then
+    log "no sudo (and no local password expected); skipping chsh — .bashrc trampoline handles it"
+    return
+  fi
+
   if grep -qx "$zsh_path" /etc/shells 2>/dev/null && have chsh; then
-    log "running chsh -s $zsh_path"
-    chsh -s "$zsh_path" </dev/tty 2>/dev/null \
+    log "running sudo chsh -s $zsh_path for $USER"
+    sudo chsh -s "$zsh_path" "$USER" 2>/dev/null \
       && ok "default shell changed; takes effect on next login" \
       || warn "chsh failed; .bashrc trampoline will handle it"
   else
