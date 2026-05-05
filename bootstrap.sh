@@ -299,8 +299,7 @@ install_atuin() {
   [[ "${SKIP_ATUIN:-0}" = "1" ]] && return
   section "atuin"
 
-  # Pre-create config dir so atuin's installer doesn't auto-register
-  # a fresh local key (which silently mismatches your real sync key).
+  # Pre-create config dirs so atuin's installer doesn't auto-register
   mkdir -p "$HOME/.config/atuin" "$HOME/.local/share/atuin"
 
   if have atuin; then
@@ -309,8 +308,10 @@ install_atuin() {
     log "installing atuin"
     local _tmp; _tmp="$(mktemp)"
     if curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh -o "$_tmp"; then
-      # ATUIN_NO_REGISTRATION=1 is unofficial but the installer also skips
-      # auto-register if the config dir exists (which we created above).
+      # ATUIN_NO_REGISTRATION blocks installer's auto-registration step.
+      # Even when honored, the installer still creates a local encryption key
+      # at ~/.local/share/atuin/key — we delete that below so login uses
+      # the real key entered by the user.
       if interactive; then
         ATUIN_NO_REGISTRATION=1 sh "$_tmp" --no-modify-path </dev/tty || warn "atuin installer exited non-zero"
       else
@@ -321,6 +322,13 @@ install_atuin() {
     fi
     rm -f "$_tmp"
     [[ -x "$HOME/.atuin/bin/atuin" ]] && ln -sfn "$HOME/.atuin/bin/atuin" "$LOCAL_BIN/atuin"
+
+    # Delete the auto-generated local key. atuin login will replace it with
+    # the real key from your existing account, preventing silent mismatch.
+    if [[ -f "$HOME/.local/share/atuin/key" ]]; then
+      rm -f "$HOME/.local/share/atuin/key"
+      log "removed auto-generated atuin key (login will install the real one)"
+    fi
   fi
 
   if ! have atuin; then
@@ -328,66 +336,41 @@ install_atuin() {
     return
   fi
 
-  # Import existing zsh history into atuin DB (safe to re-run; atuin dedupes)
+  # Import existing zsh history into local atuin DB (idempotent; atuin dedupes)
   [[ -f "$HOME/.zsh_history" ]] && atuin import zsh >/dev/null 2>&1 || true
 
   if [[ "${SKIP_ATUIN_REGISTER:-0}" = "1" ]] || ! interactive; then
-    log "skipping atuin login (run 'atuin login -u USER -k MNEMONIC' manually)"
+    log "skipping atuin login (run 'atuin login' manually)"
     return
   fi
 
-  # If already logged in AND key matches what's in use, skip.
-  # Otherwise do a clean logout+login to avoid silent key mismatch.
-  if atuin status 2>&1 | grep -qi 'logged in'; then
-    if atuin sync --force >/dev/null 2>&1; then
-      ok "atuin already logged in and syncing cleanly"
-      return
-    else
-      warn "atuin is logged in but sync failed (likely key mismatch); resetting"
-      atuin logout >/dev/null 2>&1 || true
-    fi
+  # Already logged in AND syncing cleanly? Skip.
+  if atuin status 2>&1 | grep -qi 'logged in' && atuin sync >/dev/null 2>&1; then
+    ok "atuin already logged in and syncing cleanly"
+    return
   fi
 
   echo
   echo "═══════════════════════════════════════════════════════════════════════"
   echo " Atuin sync setup"
   echo
-  echo " IMPORTANT: only REGISTER on your first machine ever. On every other"
-  echo " machine, LOGIN with the mnemonic key from the first one."
+  echo " You'll be prompted for username, password, and your encryption key."
+  echo " The key is the 24-word mnemonic (or k4.lid... base64) from when you"
+  echo " first registered. If you don't have it, save it from 1Password now."
   echo
-  echo " If you registered before and don't have the key, you've lost it —"
-  echo " atuin is end-to-end encrypted. You'll need to delete the account"
-  echo " (web UI at atuin.sh) and re-register."
+  echo " (Choose 's' to skip and use atuin locally; you can run 'atuin login'"
+  echo "  manually later, or 'atuin register' if this is your first machine.)"
   echo "═══════════════════════════════════════════════════════════════════════"
-  echo "  [1] LOGIN to existing account (you already registered elsewhere)"
-  echo "  [2] skip (use atuin locally, sync later)"
-  echo "  [r] REGISTER new account (only on your VERY FIRST machine!)"
-  local choice; choice="$(ask 'choice [1/2/r]: ')"
+  local choice; choice="$(ask 'log in now? [Y/s]: ')"
   case "$choice" in
-    1)
-      local user key
-      user="$(ask 'atuin username: ')"
-      echo "Paste your mnemonic key (24 words, or k4.lid.xxx... base64 form):"
-      key="$(ask 'key: ')"
-      if [[ -n "$user" && -n "$key" ]]; then
-        atuin login -u "$user" -k "$key" </dev/tty
-        atuin sync >/dev/null 2>&1 \
-          && ok "atuin login + sync succeeded" \
-          || warn "atuin login completed but sync failed; check 'atuin status'"
-      else
-        warn "username or key was empty; skipping login"
-      fi
-      ;;
-    r|R)
-      atuin register </dev/tty
-      echo
-      echo "═══════════════════════════════════════════════════════════════════════"
-      echo " ⚠️  SAVE THE MNEMONIC ABOVE NOW. Put it in 1Password."
-      echo " You will need it to log in on every other machine."
-      echo "═══════════════════════════════════════════════════════════════════════"
+    s|S|skip)
+      log "skipping atuin login; run 'atuin login' (or 'atuin register') later"
       ;;
     *)
-      log "skipping atuin login; run 'atuin login -u USER -k MNEMONIC' later"
+      atuin login </dev/tty
+      atuin sync >/dev/null 2>&1 \
+        && ok "atuin login + sync succeeded" \
+        || warn "atuin login completed but sync failed; check 'atuin status' and 'atuin sync'"
       ;;
   esac
 }
