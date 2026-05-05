@@ -11,8 +11,11 @@ zsh + antidote + starship + claude-code + uv + atuin + direnv + mosh
 On a fresh machine:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/EricZQu/dotfiles/main/bootstrap.sh | bash
+curl -fsSL "https://raw.githubusercontent.com/EricZQu/dotfiles/main/bootstrap.sh?$(date +%s)" | bash
 ```
+
+(The `?$(date +%s)` query string busts GitHub's raw CDN cache — without it
+you may pull a stale `bootstrap.sh` for up to ~24h after a push.)
 
 That's it. The script:
 
@@ -276,6 +279,21 @@ plus `loginctl enable-linger`.
 **Conda doesn't activate fast enough.** The OMZ `python` plugin and Starship's
 `conda` module both probe conda; if your `conda init` block is heavy, consider
 moving it into `~/.zshrc.local` and lazy-loading.
+
+**`raw.githubusercontent.com` is serving a stale `bootstrap.sh`.** GitHub's
+raw CDN can cache for up to ~24h. Workarounds, in order of preference:
+
+```bash
+# 1. cache-bust with a query string
+curl -fsSL "https://raw.githubusercontent.com/EricZQu/dotfiles/main/bootstrap.sh?$(date +%s)" | bash
+
+# 2. pin to a specific commit SHA (immutable, never stale)
+curl -fsSL https://raw.githubusercontent.com/EricZQu/dotfiles/<sha>/bootstrap.sh | bash
+
+# 3. use jsDelivr, which exposes a manual purge endpoint
+curl -fsSL https://cdn.jsdelivr.net/gh/EricZQu/dotfiles@main/bootstrap.sh | bash
+# purge: curl https://purge.jsdelivr.net/gh/EricZQu/dotfiles@main/bootstrap.sh
+```
 
 ## Editing on a server
 
