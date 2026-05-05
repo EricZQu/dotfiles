@@ -11,11 +11,14 @@ zsh + antidote + starship + claude-code + uv + atuin + direnv + mosh
 On a fresh machine:
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/EricZQu/dotfiles/main/bootstrap.sh?$(date +%s)" | bash
+curl -fsSL -H 'Accept: application/vnd.github.raw' \
+  https://api.github.com/repos/EricZQu/dotfiles/contents/bootstrap.sh | bash
 ```
 
-(The `?$(date +%s)` query string busts GitHub's raw CDN cache — without it
-you may pull a stale `bootstrap.sh` for up to ~24h after a push.)
+(Uses the GitHub API — `max-age=60` — instead of `raw.githubusercontent.com`,
+whose Fastly cache can serve a stale `bootstrap.sh` for up to ~24h after a
+push. Query-string cache-busting on the raw URL **does not work** — Fastly
+strips it from the cache key.)
 
 That's it. The script:
 
@@ -281,16 +284,20 @@ plus `loginctl enable-linger`.
 moving it into `~/.zshrc.local` and lazy-loading.
 
 **`raw.githubusercontent.com` is serving a stale `bootstrap.sh`.** GitHub's
-raw CDN can cache for up to ~24h. Workarounds, in order of preference:
+raw URL is fronted by Fastly with `max-age=300`, but in practice can serve
+stale content for up to ~24h after a push, and **query-string cache-busting
+does not work** — Fastly strips the query string from the cache key. Use one
+of these instead (the Quickstart already uses option 1):
 
 ```bash
-# 1. cache-bust with a query string
-curl -fsSL "https://raw.githubusercontent.com/EricZQu/dotfiles/main/bootstrap.sh?$(date +%s)" | bash
+# 1. GitHub API (max-age=60, 60 unauth req/h — fine for a one-off bootstrap)
+curl -fsSL -H 'Accept: application/vnd.github.raw' \
+  https://api.github.com/repos/EricZQu/dotfiles/contents/bootstrap.sh | bash
 
 # 2. pin to a specific commit SHA (immutable, never stale)
 curl -fsSL https://raw.githubusercontent.com/EricZQu/dotfiles/<sha>/bootstrap.sh | bash
 
-# 3. use jsDelivr, which exposes a manual purge endpoint
+# 3. jsDelivr — supports a manual purge endpoint
 curl -fsSL https://cdn.jsdelivr.net/gh/EricZQu/dotfiles@main/bootstrap.sh | bash
 # purge: curl https://purge.jsdelivr.net/gh/EricZQu/dotfiles@main/bootstrap.sh
 ```
