@@ -45,12 +45,15 @@ bar() {  # bar <pct> <width>  — 8 sub-cell steps per cell via ▏▎▍▌▋�
   (( total < 0 ))     && total=0
   full=$(( total / 8 )); part=$(( total % 8 ))
   empty=$(( w - full - (part > 0 ? 1 : 0) ))
-  local parts=("" "▏" "▎" "▍" "▌" "▋" "▊" "▉")
-  local color; color="$(color_for_pct "$pct")"
-  local out="$color"
-  (( full  > 0 )) && out+=$(printf '█%.0s' $(seq 1 "$full"))
-  (( part  > 0 )) && out+="${parts[$part]}"
-  (( empty > 0 )) && out+="$DIM$(printf '░%.0s' $(seq 1 "$empty"))"
+  local subs=("" "▏" "▎" "▍" "▌" "▋" "▊" "▉")
+  local fg trackfg trackbg
+  fg="$(color_for_pct "$pct")"
+  trackfg=$'\033[38;5;240m'   # grey track foreground
+  trackbg=$'\033[48;5;240m'   # same grey as partial-cell background
+  local out=""
+  (( full  > 0 )) && out+="${fg}$(printf '█%.0s' $(seq 1 "$full"))"
+  (( part  > 0 )) && out+="${fg}${trackbg}${subs[$part]}${RST}"
+  (( empty > 0 )) && out+="${trackfg}$(printf '█%.0s' $(seq 1 "$empty"))"
   printf '%s%s' "$out" "$RST"
 }
 
