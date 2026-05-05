@@ -3,10 +3,10 @@
 # Eric's server bootstrap
 #
 # Quickstart on a fresh machine:
-#   curl -fsSL https://raw.githubusercontent.com/ericqu/dotfiles/main/bootstrap.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/EricZQu/dotfiles/main/bootstrap.sh | bash
 #
 # Or with overrides:
-#   REPO_URL=https://github.com/ericqu/dotfiles.git \
+#   REPO_URL=https://github.com/EricZQu/dotfiles.git \
 #   GITHUB_EMAIL=ericqu@berkeley.edu \
 #   bash bootstrap.sh
 #
@@ -27,7 +27,7 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-REPO_URL="${REPO_URL:-https://github.com/ericqu/dotfiles.git}"
+REPO_URL="${REPO_URL:-https://github.com/EricZQu/dotfiles.git}"
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
 GITHUB_EMAIL="${GITHUB_EMAIL:-ericqu@berkeley.edu}"
 
