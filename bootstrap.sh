@@ -45,7 +45,7 @@ have()      { command -v "$1" >/dev/null 2>&1; }
 have_sudo() { have sudo && sudo -n true 2>/dev/null; }
 is_linux()  { [[ "$(uname -s)" = "Linux" ]]; }
 is_macos()  { [[ "$(uname -s)" = "Darwin" ]]; }
-interactive(){ [[ -z "${ASSUME_YES:-}" && -t 0 && -t 1 ]]; }
+interactive(){ [[ -z "${ASSUME_YES:-}" ]] && { : >/dev/tty; } 2>/dev/null; }
 ask()       { local p="$1" reply; read -r -p "$p" reply </dev/tty; printf '%s\n' "$reply"; }
 confirm()   {
   interactive || return 0
