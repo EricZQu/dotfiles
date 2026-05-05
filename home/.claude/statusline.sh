@@ -38,14 +38,19 @@ color_for_pct() {  # 0-100 → green<50<yellow<80<red
   fi
 }
 
-bar() {  # bar <pct> <width>
-  local pct="$1" w="${2:-10}" filled
-  filled=$(( pct * w / 100 )); (( filled > w )) && filled=$w; (( filled < 0 )) && filled=0
-  local empty=$(( w - filled ))
+bar() {  # bar <pct> <width>  — 8 sub-cell steps per cell via ▏▎▍▌▋▊▉█
+  local pct="$1" w="${2:-10}" total full part empty
+  total=$(( pct * w * 8 / 100 ))
+  (( total > w * 8 )) && total=$(( w * 8 ))
+  (( total < 0 ))     && total=0
+  full=$(( total / 8 )); part=$(( total % 8 ))
+  empty=$(( w - full - (part > 0 ? 1 : 0) ))
+  local parts=("" "▏" "▎" "▍" "▌" "▋" "▊" "▉")
   local color; color="$(color_for_pct "$pct")"
-  local out=""
-  (( filled > 0 )) && out+="$color$(printf '█%.0s' $(seq 1 "$filled"))"
-  (( empty  > 0 )) && out+="$DIM$(printf '░%.0s' $(seq 1 "$empty"))"
+  local out="$color"
+  (( full  > 0 )) && out+=$(printf '█%.0s' $(seq 1 "$full"))
+  (( part  > 0 )) && out+="${parts[$part]}"
+  (( empty > 0 )) && out+="$DIM$(printf '░%.0s' $(seq 1 "$empty"))"
   printf '%s%s' "$out" "$RST"
 }
 
