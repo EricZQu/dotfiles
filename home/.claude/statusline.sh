@@ -7,8 +7,8 @@
 # Reads JSON on stdin (per Claude Code's spec), prints two formatted lines
 # on stdout. Configure via ~/.config/claude/statusline.env.
 #
-# Line 1 — identity:  host │ dir(branch) │ env │ GPU │ slurm jobs
-# Line 2 — session:   model │ ctx-bar │ cost+rate │ tokens+tpm │ rate-limit
+# Line 1 — identity:  host │ dir(branch) │ env │ GPU │ slurm jobs │ model
+# Line 2 — session:   ctx-bar │ cost+rate │ tokens+tpm │ rate-limit
 #
 # Dependencies: jq. Everything else degrades gracefully.
 # ============================================================================
@@ -278,12 +278,12 @@ if [[ "$SHOW_SLURM" = "1" ]]; then
   [[ -n "$slurm_str" ]] && parts1+=("${MAG}🧪${RST} ${BMAG}$slurm_str jobs${RST}")
 fi
 
+if [[ "$SHOW_MODEL" = "1" && -n "$model_name" ]]; then
+  parts1+=("${BOLD}🤖${RST} ${BCYN}$model_name${RST}")
+fi
+
 # ─── BUILD LINE 2 ──────────────────────────────────────────────────────────
 parts2=()
-
-if [[ "$SHOW_MODEL" = "1" && -n "$model_name" ]]; then
-  parts2+=("${BOLD}🤖${RST} ${BCYN}$model_name${RST}")
-fi
 
 if [[ "$SHOW_CTX" = "1" ]]; then
   parts2+=("💭 $(bar "$ctx_pct" 10) $(color_for_pct "$ctx_pct")${ctx_pct}%${RST}")
