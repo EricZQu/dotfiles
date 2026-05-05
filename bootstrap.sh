@@ -368,9 +368,15 @@ install_atuin() {
       ;;
     *)
       atuin login </dev/tty
-      atuin sync >/dev/null 2>&1 \
-        && ok "atuin login + sync succeeded" \
-        || warn "atuin login completed but sync failed; check 'atuin status' and 'atuin sync'"
+      # 'atuin login' already does an initial sync; a second sync here can
+      # trip atuin's client-side rate limit and exit non-zero even on success.
+      # Run sync best-effort (visible output), then verify via 'atuin status'.
+      atuin sync || true
+      if atuin status 2>&1 | grep -qi 'logged in'; then
+        ok "atuin login succeeded"
+      else
+        warn "atuin login may have failed; check 'atuin status'"
+      fi
       ;;
   esac
 }
