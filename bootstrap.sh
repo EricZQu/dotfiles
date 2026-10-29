@@ -10,13 +10,17 @@
 #   GITHUB_EMAIL=ericqu@berkeley.edu \
 #   bash bootstrap.sh
 #
+# Nothing is installed with sudo: every tool lands under $HOME (~/.local/bin,
+# ~/.pixi, ...), so it can self-update and never clashes with root-owned copies.
+#
 # Env flags (all optional, set to 1 to skip):
 #   SKIP_TOOLS          fzf/zoxide/eza/bat/ripgrep/jq
 #   SKIP_UV             uv install
 #   SKIP_HF             huggingface cli
 #   SKIP_CLAUDE_CODE    claude code cli
+#   SKIP_CODEX          openai codex cli
+#   SKIP_HERDR          herdr (agent multiplexer)
 #   SKIP_DIRENV         direnv
-#   SKIP_ATUIN          atuin
 #   SKIP_ATUIN_REGISTER skip the interactive register/login step
 #   SKIP_MOSH           mosh
 #   SKIP_GLOBUS         globus connect personal
@@ -24,6 +28,9 @@
 #   SKIP_SSH            github ssh keygen
 #   SKIP_CHSH           don't try chsh; rely on .bashrc trampoline
 #   ASSUME_YES=1        non-interactive mode (skip all interactive steps)
+#
+# Opt-in flags (set to 1 to enable):
+#   WITH_ATUIN          atuin shell history (+ sync login)
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -42,6 +49,8 @@ ok()     { printf '%s[bootstrap]%s %s\n' "$c_grn"  "$c_rst" "$*"; }
 section(){ printf '\n%s═══ %s ═══%s\n' "$c_blue" "$*" "$c_rst"; }
 
 have()      { command -v "$1" >/dev/null 2>&1; }
+# $1 is on PATH and owned by us, i.e. not a root-owned sudo/apt/npm -g install
+have_own()  { local p; p="$(command -v "$1" 2>/dev/null)" && [[ -O "$p" ]]; }
 have_sudo() { have sudo && sudo -n true 2>/dev/null; }
 is_linux()  { [[ "$(uname -s)" = "Linux" ]]; }
 is_macos()  { [[ "$(uname -s)" = "Darwin" ]]; }
@@ -53,6 +62,13 @@ confirm()   {
   read -r -p "$p [Y/n] " reply </dev/tty
   [[ -z "$reply" || "$reply" =~ ^[Yy] ]]
 }
+
+# Everything installs into $HOME; under sudo that means root's home, or
+# root-owned files in yours that later updates can't touch.
+if [[ $EUID -eq 0 && -n "${SUDO_USER:-}" && "$SUDO_USER" != root ]]; then
+  err "don't run bootstrap with sudo — it installs into your home and needs no root"
+  exit 1
+fi
 
 # Detect arch for binary downloads
 ARCH="$(uname -m)"
@@ -74,25 +90,27 @@ LOCAL_BIN="$HOME/.local/bin"
 mkdir -p "$LOCAL_BIN"
 case ":$PATH:" in *":$LOCAL_BIN:"*) ;; *) export PATH="$LOCAL_BIN:$PATH" ;; esac
 
-# Cross-platform package install: brew on macOS, apt on Linux (with sudo).
-# Returns 0 on success, 1 if no usable package manager.
+# Package install via Homebrew on macOS (no sudo). Deliberately never apt:
+# sudo installs are root-owned, can't self-update, and clash with user-local
+# copies — so on Linux this returns 1 and callers fall through to a user-space
+# install under ~/.local.
 pkg_install() {
-  if is_macos; then
-    if have brew; then
-      brew install "$@" >/dev/null 2>&1
-    else
-      return 1
-    fi
-  elif have_sudo; then
-    sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq >/dev/null 2>&1 || true
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$@" >/dev/null 2>&1
-  else
-    return 1
-  fi
+  is_macos && have brew && brew install "$@" >/dev/null 2>&1
 }
 
-# Backwards-compat alias; many install_* functions still call this name.
-apt_install() { pkg_install "$@"; }
+# pixi: conda-forge packages as single-user installs (no sudo, no conda needed).
+# Provides zsh and mosh on Linux machines that don't have them.
+ensure_pixi() {
+  have pixi && return 0
+  log "installing pixi (single binary, no sudo)"
+  # NO_PATH_UPDATE: otherwise it appends to ~/.zshrc, a symlink into this repo
+  curl -fsSL https://pixi.sh/install.sh | PIXI_NO_PATH_UPDATE=1 bash >/dev/null 2>&1 || return 1
+  [[ -x "$HOME/.pixi/bin/pixi" ]] && {
+    export PATH="$HOME/.pixi/bin:$PATH"
+    ln -sfn "$HOME/.pixi/bin/pixi" "$LOCAL_BIN/pixi"
+  }
+  have pixi
+}
 
 # Generic: download a tarball from a URL, extract a single binary into ~/.local/bin
 # usage: install_release_binary <name> <url> <path-inside-archive> [archive-type]
@@ -158,9 +176,13 @@ clone_dotfiles() {
 install_zsh() {
   section "zsh"
   if have zsh; then ok "zsh present: $(zsh --version | head -1)"; return; fi
-  if apt_install zsh; then ok "installed zsh via apt"; return; fi
-  if is_macos && have brew; then brew install zsh && return; fi
-  warn "could not install zsh and don't have permissions; ask sysadmin"
+  if pkg_install zsh; then ok "installed zsh via brew"; return; fi
+  if ensure_pixi && pixi global install zsh >/dev/null 2>&1; then
+    ln -sfn "$HOME/.pixi/bin/zsh" "$LOCAL_BIN/zsh"
+    ok "installed zsh via pixi → $LOCAL_BIN/zsh"
+    return
+  fi
+  warn "could not install zsh without sudo; ask your sysadmin"
 }
 
 # ============================================================================
@@ -289,14 +311,14 @@ install_direnv() {
   [[ "${SKIP_DIRENV:-0}" = "1" ]] && return
   section "direnv"
   if have direnv; then ok "direnv present: $(direnv --version)"; return; fi
-  apt_install direnv && return || true
+  pkg_install direnv && return || true
   log "installing direnv → $LOCAL_BIN"
   curl -sfL https://direnv.net/install.sh | bin_path="$LOCAL_BIN" bash
   ok "direnv installed"
 }
 
 install_atuin() {
-  [[ "${SKIP_ATUIN:-0}" = "1" ]] && return
+  [[ "${WITH_ATUIN:-0}" = "1" ]] || return 0   # opt-in
   section "atuin"
 
   # Pre-create config dirs so atuin's installer doesn't auto-register
@@ -389,21 +411,11 @@ install_mosh() {
   section "mosh"
   if have mosh-server || have mosh; then ok "mosh present"; return; fi
 
-  # 1. native package manager (apt with sudo, brew on Mac)
-  if pkg_install mosh; then ok "installed mosh via package manager"; return; fi
+  # 1. brew on Mac
+  if pkg_install mosh; then ok "installed mosh via brew"; return; fi
 
   # 2. pixi (conda-forge installer, no sudo, no existing conda needed)
-  install_pixi_if_needed() {
-    have pixi && return 0
-    log "installing pixi (single binary, no sudo) to provide mosh"
-    curl -fsSL https://pixi.sh/install.sh | bash >/dev/null 2>&1 || return 1
-    [[ -x "$HOME/.pixi/bin/pixi" ]] && {
-      export PATH="$HOME/.pixi/bin:$PATH"
-      ln -sfn "$HOME/.pixi/bin/pixi" "$LOCAL_BIN/pixi"
-    }
-    have pixi
-  }
-  if install_pixi_if_needed; then
+  if ensure_pixi; then
     if pixi global install mosh >/dev/null 2>&1; then
       [[ -x "$HOME/.pixi/bin/mosh" ]] && ln -sfn "$HOME/.pixi/bin/mosh" "$LOCAL_BIN/mosh"
       [[ -x "$HOME/.pixi/bin/mosh-server" ]] && ln -sfn "$HOME/.pixi/bin/mosh-server" "$LOCAL_BIN/mosh-server"
@@ -451,27 +463,61 @@ install_hf() {
   section "huggingface cli"
   if have hf; then ok "hf cli present"; return; fi
 
-  # Official installer: works on Linux, but spotty on macOS as of 2026
-  if curl -LsSf https://hf.co/cli/install.sh | bash 2>&1 | tail -5; then
+  # uv tool: isolated venv on a uv-managed python, so no python3-venv or other
+  # system packages needed. Links hf into ~/.local/bin.
+  if have uv; then
+    uv tool install --quiet huggingface_hub >/dev/null 2>&1 || true
+    have hf && { ok "hf installed via uv tool (update: uv tool upgrade huggingface_hub)"; return; }
+  fi
+
+  # Fallback: official installer (venv in ~/.hf-cli; needs python3 with venv)
+  log "trying the official hf installer"
+  if curl -LsSf https://hf.co/cli/install.sh | bash -s -- --no-modify-path 2>&1 | tail -5; then
     have hf && { ok "hf installed"; return; }
   fi
 
-  # Fallback: uv tool install
-  if have uv; then
-    log "official installer didn't yield 'hf' on PATH; trying 'uv tool install huggingface-hub'"
-    uv tool install --quiet "huggingface_hub[cli]" >/dev/null 2>&1 || true
-    have hf && { ok "hf installed via uv tool"; return; }
-  fi
+  warn "hf install failed. Try: uv tool install huggingface_hub"
+}
 
-  warn "hf install failed. Try: pip install -U 'huggingface_hub[cli]'"
+# ============================================================================
+# 7b. coding agents (claude, codex) + herdr — all self-updating single-user
+#     installs into ~/.local/bin
+# ============================================================================
+# An old sudo install stays on disk but is shadowed: ~/.local/bin is first on PATH.
+warn_root_owned() {
+  warn "$1 at $(command -v "$1") is root-owned (old sudo install?); installing a user-local copy that shadows it"
+  if [[ -n "${2:-}" ]]; then warn "  remove the old one when convenient: $2"; fi
 }
 
 install_claude_code() {
   [[ "${SKIP_CLAUDE_CODE:-0}" = "1" ]] && return
   section "claude code"
-  if have claude; then ok "claude code present"; return; fi
-  curl -fsSL https://claude.ai/install.sh | bash >/dev/null 2>&1 || warn "claude install failed"
-  have claude && ok "claude code installed"
+  if have_own claude; then ok "claude code present"; return; fi
+  have claude && warn_root_owned claude "sudo npm uninstall -g @anthropic-ai/claude-code"
+  curl -fsSL https://claude.ai/install.sh | bash >/dev/null 2>&1 || true
+  if [[ -x "$LOCAL_BIN/claude" ]]; then ok "claude code installed"; else warn "claude install failed"; fi
+}
+
+install_codex() {
+  [[ "${SKIP_CODEX:-0}" = "1" ]] && return
+  section "codex"
+  if have_own codex; then ok "codex present"; return; fi
+  have codex && warn_root_owned codex "sudo npm uninstall -g @openai/codex"
+  # On seeing another codex on PATH, the installer appends a PATH block to the
+  # rc file for $SHELL. SHELL=/bin/sh steers that to ~/.profile, away from
+  # ~/.zshrc (a symlink into this repo).
+  curl -fsSL https://chatgpt.com/codex/install.sh \
+    | CODEX_NON_INTERACTIVE=1 SHELL=/bin/sh sh >/dev/null 2>&1 || true
+  if [[ -x "$LOCAL_BIN/codex" ]]; then ok "codex installed (update: codex update)"; else warn "codex install failed"; fi
+}
+
+install_herdr() {
+  [[ "${SKIP_HERDR:-0}" = "1" ]] && return
+  section "herdr"
+  if have_own herdr; then ok "herdr present"; return; fi
+  have herdr && warn_root_owned herdr
+  curl -fsSL https://herdr.dev/install.sh | HERDR_INSTALL_DIR="$LOCAL_BIN" sh >/dev/null 2>&1 || true
+  if [[ -x "$LOCAL_BIN/herdr" ]]; then ok "herdr installed (update: herdr update)"; else warn "herdr install failed"; fi
 }
 
 # ============================================================================
@@ -568,6 +614,16 @@ link_dotfiles() {
   local src="$DOTFILES_DIR/home"
   [[ -d "$src" ]] || { err "no home/ dir in $DOTFILES_DIR"; exit 1; }
 
+  # Prune dangling links to files since removed from home/ (e.g. .tmux.conf)
+  local d l
+  while IFS= read -r -d '' d; do
+    for l in "$HOME${d#$src}"/{.,}*; do
+      [[ -L "$l" && ! -e "$l" && "$(readlink "$l")" == "$src/"* ]] || continue
+      rm -f "$l"
+      log "removed stale link $l"
+    done
+  done < <(find "$src" -type d -print0)
+
   # Walk all files in src; skip directories themselves (we recreate them)
   while IFS= read -r -d '' f; do
     local rel="${f#$src/}"
@@ -594,9 +650,12 @@ write_bashrc_trampoline() {
 # >>> bootstrap zsh trampoline >>>
 # Auto-launch zsh on interactive logins where it's not the default shell
 case $- in *i*) ;; *) return ;; esac
-if [ -x "$(command -v zsh)" ] && [ -z "$ZSH_VERSION" ] && [ "$SHLVL" = "1" ]; then
-  exec zsh -l
+# a pixi-installed zsh lives in ~/.local/bin, which may not be on PATH yet here
+_zsh="$(command -v zsh || echo "$HOME/.local/bin/zsh")"
+if [ -x "$_zsh" ] && [ -z "$ZSH_VERSION" ] && [ "$SHLVL" = "1" ]; then
+  exec "$_zsh" -l
 fi
+unset _zsh
 # <<< bootstrap zsh trampoline <<<
 EOF
   ok "added zsh trampoline to ~/.bashrc"
@@ -692,7 +751,9 @@ main() {
   install_uv
   install_hf
   install_claude_code
-  install_atuin       # after zsh history is around
+  install_codex
+  install_herdr
+  install_atuin       # opt-in (WITH_ATUIN=1); after zsh history is around
   install_mosh
   install_globus
   setup_github_ssh

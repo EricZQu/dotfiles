@@ -3,7 +3,7 @@
 Bootstrap script + dotfiles for fast setup on any new server.
 
 ```
-zsh + antidote + starship + claude-code + uv + atuin + direnv + mosh
+zsh + antidote + starship + claude-code + codex + herdr + uv + hf + direnv + mosh  (+ atuin, opt-in)
 ```
 
 ## Quickstart
@@ -16,14 +16,14 @@ curl -fsSL https://raw.githubusercontent.com/EricZQu/dotfiles/main/bootstrap.sh 
 
 That's it. The script:
 
-1. Installs zsh (apt if sudo available, else warns)
+1. Installs zsh if missing (brew on macOS, pixi/conda-forge on Linux)
 2. Clones this repo to `~/.dotfiles`
 3. Installs the antidote plugin manager
 4. Installs Starship (single binary to `~/.local/bin`)
 5. Installs modern CLI tools: jq, fzf, zoxide, eza, bat, ripgrep
-6. Installs direnv, uv, hf cli, claude code
-7. Installs atuin and (if interactive) prompts for register/login
-8. Installs mosh (apt → conda-forge → source-build chain)
+6. Installs direnv, uv, hf cli, claude code, codex, herdr
+7. *(opt-in, `WITH_ATUIN=1`)* Installs atuin and (if interactive) prompts for register/login
+8. Installs mosh (brew → pixi/conda-forge → source-build chain)
 9. Installs Globus Connect Personal and (if interactive) prompts for setup key
 10. Generates a github SSH key and prints the pubkey
 11. Symlinks every file under `home/` into `$HOME`
@@ -31,6 +31,14 @@ That's it. The script:
 13. Tries `chsh -s /usr/bin/zsh`
 
 Everything is **idempotent** — re-running on an existing server just updates what changed.
+
+**Nothing is installed with sudo.** Every tool goes under `$HOME` (`~/.local/bin`,
+`~/.pixi`, …), so self-updaters like `claude`, `codex` and `herdr update` work
+without root and nothing ends up root-owned. If an old sudo install of
+claude/codex/herdr is found, bootstrap installs a user-local copy that shadows it
+(`~/.local/bin` is first on `PATH`) and tells you how to remove the old one. The
+script refuses to run under `sudo`. The only remaining sudo use is `chsh`, and only
+when passwordless sudo is already available.
 
 ## Repository layout
 
@@ -42,7 +50,6 @@ dotfiles/
     ├── .zshrc
     ├── .zsh_plugins.txt          # antidote plugin list (compiled to .zsh_plugins.zsh on first shell)
     ├── .gitconfig                # identity + modern git defaults + delta config
-    ├── .tmux.conf
     └── .config/
         ├── starship.toml
         ├── direnv/direnvrc       # contains layout_uv shim
@@ -65,9 +72,9 @@ Pass these as env vars when running bootstrap, e.g. `SKIP_GLOBUS=1 bash bootstra
 | `ASSUME_YES=1` | non-interactive: skip atuin register, ssh keygen prompts, globus auth |
 | `SKIP_TOOLS=1` | skip fzf/zoxide/eza/bat/ripgrep |
 | `SKIP_DIRENV=1` | skip direnv |
-| `SKIP_UV=1` / `SKIP_HF=1` / `SKIP_CLAUDE_CODE=1` | skip those installs |
-| `SKIP_ATUIN=1` | skip atuin entirely |
-| `SKIP_ATUIN_REGISTER=1` | install atuin but don't prompt for register/login |
+| `SKIP_UV=1` / `SKIP_HF=1` / `SKIP_CLAUDE_CODE=1` / `SKIP_CODEX=1` / `SKIP_HERDR=1` | skip those installs |
+| `WITH_ATUIN=1` | **opt in** to atuin (off by default) |
+| `SKIP_ATUIN_REGISTER=1` | with `WITH_ATUIN=1`: install atuin but don't prompt for register/login |
 | `SKIP_MOSH=1` | skip mosh |
 | `SKIP_GLOBUS=1` | skip globus |
 | `SKIP_GLOBUS_AUTH=1` | install globus but don't prompt for setup key |
@@ -86,7 +93,7 @@ itself doesn't have native zsh transient support but this emulates p10k.
 ### Plugins: antidote (loads OMZ plugins)
 
 Antidote replaces oh-my-zsh as the framework but loads OMZ plugins natively.
-Result: same plugin list you're used to (git, extract, copy*, uv, tmux, etc.)
+Result: same plugin list you're used to (git, extract, copy*, uv, etc.)
 but ~5–10× faster shell startup.
 
 The plugin list lives at `home/.zsh_plugins.txt`. Edit it and start a new
@@ -101,11 +108,12 @@ shell — antidote rebuilds the compiled bundle automatically.
 | ripgrep | grep -r | `rg` (with `--hidden` and `!.git`) |
 | delta | diff pager | git diff/log/show (configured in .gitconfig) |
 | zoxide | cd | `cd foo` jumps to most-used dir matching foo (overrides cd!) |
-| fzf | — | `Ctrl+T` for files, `Ctrl+R` for history (overridden by atuin) |
+| fzf | — | `Ctrl+T` for files, `Ctrl+R` for history (overridden by atuin if installed) |
 | fzf-tab | tab menu | tab now opens a fuzzy interactive picker |
 | direnv | manual venv activation | drop a `.envrc` containing `layout uv` |
-| atuin | shell history | `Ctrl+R` for fuzzy + cross-machine sync |
+| atuin *(opt-in)* | shell history | `Ctrl+R` for fuzzy + cross-machine sync |
 | mosh | ssh | `mosh server` for sessions that survive network changes |
+| herdr | tmux | terminal multiplexer for running several coding agents side by side |
 
 ### uv + direnv pattern
 
@@ -185,9 +193,30 @@ SHOW_SLURM=0    # disable slurm readout off-cluster
 HOST_COLORS=("bair-:36" "fair-:35")   # color-code hostnames by cluster
 ```
 
-### Atuin sync
+### Coding agents: Claude Code, Codex, herdr
 
-By default points at `https://api.atuin.sh` (their hosted server, free, E2E
+All three install as single-user binaries in `~/.local/bin` and update themselves
+in place, no sudo:
+
+```bash
+claude update     # also auto-updates in the background
+codex update
+herdr update
+```
+
+### Atuin (opt-in)
+
+Atuin is **not** installed by default. To opt in on a machine:
+
+```bash
+WITH_ATUIN=1 bash ~/.dotfiles/bootstrap.sh
+```
+
+`.zshrc` only hooks atuin in when the binary is present, so machines without it
+keep plain zsh history with fzf on `Ctrl+R`. To turn it off again on a machine
+that has it: `rm ~/.local/bin/atuin` (and `rm -rf ~/.atuin` to uninstall).
+
+Sync points at `https://api.atuin.sh` (their hosted server, free, E2E
 encrypted). To self-host later, edit `~/.config/atuin/config.toml` and add:
 
 ```toml
@@ -257,11 +286,16 @@ bash ~/.dotfiles/bootstrap.sh
 ## Troubleshooting
 
 **`exec zsh -l` fails after bootstrap.** Check that `zsh` is on `PATH`:
-`which zsh`. If not, the install step probably failed silently — try
-`apt list --installed | grep zsh`.
+`which zsh`. Without a system zsh, bootstrap installs one via pixi into
+`~/.local/bin/zsh`; if that failed, try `pixi global install zsh` by hand.
 
 **Plugins don't load.** Antidote compiles plugin source on first shell startup.
 If it's stale, delete `~/.zsh_plugins.zsh` and start a new shell.
+
+**`codex`/`claude` runs an old version or can't update.** It's probably a
+root-owned `sudo npm i -g` copy earlier on `PATH`. Run `which -a codex`, make sure
+`~/.local/bin` comes first, and remove the old one with
+`sudo npm uninstall -g @openai/codex` (or `@anthropic-ai/claude-code`).
 
 **Statusline shows nothing.** Verify `bash ~/.config/claude/statusline.sh < /dev/null`
 runs without error. If `jq: command not found`, install jq (it's part of

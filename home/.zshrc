@@ -69,12 +69,13 @@ command -v zoxide >/dev/null 2>&1 && eval "$(zoxide init zsh --cmd cd)"
 # direnv: auto-load .envrc on cd
 command -v direnv >/dev/null 2>&1 && eval "$(direnv hook zsh)"
 
-# atuin: shell history with sync; rebinds Ctrl+R
+# atuin: shell history with sync; rebinds Ctrl+R. Opt-in: only installed by
+# `WITH_ATUIN=1 bootstrap.sh`, so this is a no-op on machines without it.
 if command -v atuin >/dev/null 2>&1; then
   eval "$(atuin init zsh --disable-up-arrow)"   # keep up-arrow as plain history
 fi
 
-# fzf: fuzzy finder; provides Ctrl+R (overridden by atuin) and Ctrl+T (file picker)
+# fzf: fuzzy finder; provides Ctrl+R (overridden by atuin if installed) and Ctrl+T (file picker)
 [[ -f "$HOME/.fzf.zsh" ]] && source "$HOME/.fzf.zsh"
 
 # ─── completion config ─────────────────────────────────────────────────────
