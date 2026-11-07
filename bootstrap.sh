@@ -13,6 +13,11 @@
 # Nothing is installed with sudo: every tool lands under $HOME (~/.local/bin,
 # ~/.pixi, ...), so it can self-update and never clashes with root-owned copies.
 #
+# Shell flavor (default zsh; the zsh setup is unchanged):
+#   SHELL_FLAVOR=zsh    zsh + antidote + OMZ plugins        (shells/zsh)
+#   SHELL_FLAVOR=bash   bash + ble.sh                       (shells/bash)
+#   Files in home/ are shared; shells/<flavor>/ is linked on top of them.
+#
 # Env flags (all optional, set to 1 to skip):
 #   SKIP_TOOLS          fzf/zoxide/eza/bat/ripgrep/jq
 #   SKIP_UV             uv install
@@ -26,8 +31,9 @@
 #   SKIP_GLOBUS         globus connect personal
 #   SKIP_GLOBUS_AUTH    install globus but don't pause for setup key
 #   SKIP_SSH            github ssh keygen
-#   SKIP_BLESH          ble.sh (bash line editor: autosuggest, highlighting)
-#   BLESH_UPDATE=1      re-download ble.sh even if present
+#   SKIP_CHSH           (zsh) don't try chsh; rely on .bashrc trampoline
+#   SKIP_BLESH          (bash) skip ble.sh
+#   BLESH_UPDATE=1      (bash) re-download ble.sh even if present
 #   ASSUME_YES=1        non-interactive mode (skip all interactive steps)
 #
 # Opt-in flags (set to 1 to enable):
@@ -38,6 +44,12 @@ set -euo pipefail
 REPO_URL="${REPO_URL:-https://github.com/EricZQu/dotfiles.git}"
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
 GITHUB_EMAIL="${GITHUB_EMAIL:-ericqu@berkeley.edu}"
+SHELL_FLAVOR="${SHELL_FLAVOR:-zsh}"
+case "$SHELL_FLAVOR" in
+  zsh) OTHER_FLAVOR=bash ;;
+  bash) OTHER_FLAVOR=zsh ;;
+  *) echo "SHELL_FLAVOR must be zsh or bash (got '$SHELL_FLAVOR')" >&2; exit 1 ;;
+esac
 
 # ---- helpers --------------------------------------------------------------
 c_blue=$'\033[1;34m'; c_yel=$'\033[1;33m'; c_red=$'\033[1;31m'
@@ -100,11 +112,11 @@ pkg_install() {
 }
 
 # pixi: conda-forge packages as single-user installs (no sudo, no conda needed).
-# Provides mosh (and a modern bash) on machines that don't have them.
+# Provides zsh and mosh on Linux machines that don't have them.
 ensure_pixi() {
   have pixi && return 0
   log "installing pixi (single binary, no sudo)"
-  # NO_PATH_UPDATE: otherwise it appends to ~/.bashrc, a symlink into this repo
+  # NO_PATH_UPDATE: otherwise it appends to ~/.zshrc, a symlink into this repo
   curl -fsSL https://pixi.sh/install.sh | PIXI_NO_PATH_UPDATE=1 bash >/dev/null 2>&1 || return 1
   [[ -x "$HOME/.pixi/bin/pixi" ]] && {
     export PATH="$HOME/.pixi/bin:$PATH"
@@ -172,7 +184,38 @@ clone_dotfiles() {
 }
 
 # ============================================================================
-# 1. bash (>= 4.3 wanted by ble.sh / the .bashrc; macOS ships 3.2)
+# 1. zsh
+# ============================================================================
+install_zsh() {
+  section "zsh"
+  if have zsh; then ok "zsh present: $(zsh --version | head -1)"; return; fi
+  if pkg_install zsh; then ok "installed zsh via brew"; return; fi
+  if ensure_pixi && pixi global install zsh >/dev/null 2>&1; then
+    ln -sfn "$HOME/.pixi/bin/zsh" "$LOCAL_BIN/zsh"
+    ok "installed zsh via pixi → $LOCAL_BIN/zsh"
+    return
+  fi
+  warn "could not install zsh without sudo; ask your sysadmin"
+}
+
+# ============================================================================
+# 2. antidote (zsh plugin manager — replaces oh-my-zsh framework, but loads OMZ plugins)
+# ============================================================================
+install_antidote() {
+  section "antidote"
+  local dest="$HOME/.antidote"
+  if [[ -d "$dest/.git" ]]; then
+    log "antidote present; pulling"
+    git -C "$dest" pull --ff-only --quiet || true
+  else
+    log "cloning antidote → $dest"
+    git clone --depth=1 https://github.com/mattmc3/antidote.git "$dest"
+  fi
+  ok "antidote ready"
+}
+
+# ============================================================================
+# 1b. bash (>= 4.3 wanted by ble.sh / the .bashrc; macOS ships 3.2)
 # ============================================================================
 install_bash() {
   section "bash"
@@ -192,7 +235,7 @@ install_bash() {
 }
 
 # ============================================================================
-# 2. ble.sh (bash line editor: autosuggestions, syntax highlighting, menu
+# 2b. ble.sh (bash line editor: autosuggestions, syntax highlighting, menu
 #    completion, transient prompt). Prebuilt nightly tarball -> no make/gawk.
 # ============================================================================
 install_blesh() {
@@ -371,9 +414,12 @@ install_atuin() {
     return
   fi
 
-  # Import existing shell history into local atuin DB (idempotent; atuin dedupes)
-  [[ -f "$HOME/.bash_history" ]] && atuin import bash >/dev/null 2>&1 || true
-  [[ -f "$HOME/.zsh_history" ]]  && atuin import zsh  >/dev/null 2>&1 || true
+  # Import existing zsh history into local atuin DB (idempotent; atuin dedupes)
+  if [[ "$SHELL_FLAVOR" = bash ]]; then
+    [[ -f "$HOME/.bash_history" ]] && atuin import bash >/dev/null 2>&1 || true
+  else
+    [[ -f "$HOME/.zsh_history" ]] && atuin import zsh >/dev/null 2>&1 || true
+  fi
 
   if [[ "${SKIP_ATUIN_REGISTER:-0}" = "1" ]] || ! interactive; then
     log "skipping atuin login (run 'atuin login' manually)"
@@ -519,7 +565,7 @@ install_codex() {
   have codex && warn_root_owned codex "sudo npm uninstall -g @openai/codex"
   # On seeing another codex on PATH, the installer appends a PATH block to the
   # rc file for $SHELL. SHELL=/bin/sh steers that to ~/.profile, away from
-  # ~/.bashrc (a symlink into this repo).
+  # ~/.zshrc (a symlink into this repo).
   curl -fsSL https://chatgpt.com/codex/install.sh \
     | CODEX_NON_INTERACTIVE=1 SHELL=/bin/sh sh >/dev/null 2>&1 || true
   if [[ -x "$LOCAL_BIN/codex" ]]; then ok "codex installed (update: codex update)"; else warn "codex install failed"; fi
@@ -612,7 +658,7 @@ setup_github_ssh() {
     log "generating ed25519 key for $GITHUB_EMAIL"
     ssh-keygen -t ed25519 -C "$GITHUB_EMAIL" -f "$key" -N "" </dev/tty
   fi
-  # Don't leave the agent dangling — use ghkey (see .bashrc) to load it per session.
+  # Don't leave the agent dangling — let zsh/ssh-agent plugin manage it later.
   echo
   echo "Public key (add at https://github.com/settings/keys):"
   echo "─────────────────────────────────────────────────────"
@@ -624,31 +670,104 @@ setup_github_ssh() {
 # 10. symlink home/* into $HOME
 # ============================================================================
 link_dotfiles() {
-  section "symlinking dotfiles"
-  local src="$DOTFILES_DIR/home"
-  [[ -d "$src" ]] || { err "no home/ dir in $DOTFILES_DIR"; exit 1; }
+  section "symlinking dotfiles ($SHELL_FLAVOR)"
+  local common="$DOTFILES_DIR/home" flavor="$DOTFILES_DIR/shells/$SHELL_FLAVOR"
+  local other="$DOTFILES_DIR/shells/$OTHER_FLAVOR"
+  [[ -d "$common" ]] || { err "no home/ dir in $DOTFILES_DIR"; exit 1; }
+  [[ -d "$flavor" ]] || { err "no shells/$SHELL_FLAVOR dir in $DOTFILES_DIR"; exit 1; }
 
-  # Prune dangling links to files since removed from home/ (e.g. .tmux.conf)
-  local d l
-  while IFS= read -r -d '' d; do
-    for l in "$HOME${d#$src}"/{.,}*; do
-      [[ -L "$l" && ! -e "$l" && "$(readlink "$l")" == "$src/"* ]] || continue
-      rm -f "$l"
-      log "removed stale link $l"
-    done
-  done < <(find "$src" -type d -print0)
+  # Switching flavors: drop links into the other flavor's files, and put back
+  # whatever real file we backed up when linking them (e.g. the zsh-trampoline
+  # ~/.bashrc), so the old flavor's links can't leak into the new one.
+  local f rel dst bak
+  if [[ -d "$other" ]]; then
+    while IFS= read -r -d '' f; do
+      rel="${f#$other/}"; dst="$HOME/$rel"
+      [[ -L "$dst" && "$(readlink "$dst")" == "$other/"* ]] || continue
+      rm -f "$dst"; log "removed $OTHER_FLAVOR link $dst"
+      bak="$(ls -t "$dst".bootstrap.bak.* 2>/dev/null | head -1 || true)"
+      [[ -n "$bak" ]] && mv "$bak" "$dst" && log "restored $dst from $bak"
+    done < <(find "$other" -type f -print0)
+  fi
 
-  # Walk all files in src; skip directories themselves (we recreate them)
-  while IFS= read -r -d '' f; do
-    local rel="${f#$src/}"
-    local dst="$HOME/$rel"
-    mkdir -p "$(dirname "$dst")"
-    backup_if_real "$dst"
-    ln -sfn "$f" "$dst"
-    printf '  %s%s%s → %s\n' "$c_dim" "$dst" "$c_rst" "$f"
-  done < <(find "$src" -type f -print0)
+  # Prune dangling links to files since removed from the repo (e.g. .tmux.conf)
+  local src d l
+  for src in "$common" "$flavor"; do
+    while IFS= read -r -d '' d; do
+      for l in "$HOME${d#$src}"/{.,}*; do
+        [[ -L "$l" && ! -e "$l" && "$(readlink "$l")" == "$DOTFILES_DIR/"* ]] || continue
+        rm -f "$l"
+        log "removed stale link $l"
+      done
+    done < <(find "$src" -type d -print0)
+  done
+
+  # Walk all files in both trees; skip directories themselves (we recreate them)
+  for src in "$common" "$flavor"; do
+    while IFS= read -r -d '' f; do
+      rel="${f#$src/}"; dst="$HOME/$rel"
+      mkdir -p "$(dirname "$dst")"
+      backup_if_real "$dst"
+      ln -sfn "$f" "$dst"
+      printf '  %s%s%s → %s\n' "$c_dim" "$dst" "$c_rst" "$f"
+    done < <(find "$src" -type f -print0)
+  done
   ok "all dotfiles symlinked"
 }
+
+# ============================================================================
+# 11. .bashrc trampoline (for servers where chsh isn't allowed)
+# ============================================================================
+write_bashrc_trampoline() {
+  section "bashrc trampoline"
+  local marker="# >>> bootstrap zsh trampoline >>>"
+  local bashrc="$HOME/.bashrc"
+  [[ -f "$bashrc" ]] || touch "$bashrc"
+  if grep -qF "$marker" "$bashrc"; then ok ".bashrc trampoline already in place"; return; fi
+  cat >> "$bashrc" <<'EOF'
+
+# >>> bootstrap zsh trampoline >>>
+# Auto-launch zsh on interactive logins where it's not the default shell
+case $- in *i*) ;; *) return ;; esac
+# a pixi-installed zsh lives in ~/.local/bin, which may not be on PATH yet here
+_zsh="$(command -v zsh || echo "$HOME/.local/bin/zsh")"
+if [ -x "$_zsh" ] && [ -z "$ZSH_VERSION" ] && [ "$SHLVL" = "1" ]; then
+  exec "$_zsh" -l
+fi
+unset _zsh
+# <<< bootstrap zsh trampoline <<<
+EOF
+  ok "added zsh trampoline to ~/.bashrc"
+}
+
+# ============================================================================
+# 12. set zsh as default shell (if possible)
+# ============================================================================
+set_zsh_default() {
+  [[ "${SKIP_CHSH:-0}" = "1" ]] && return
+  section "default shell"
+  local zsh_path; zsh_path="$(command -v zsh || true)"
+  [[ -z "$zsh_path" ]] && { warn "zsh not found, skipping"; return; }
+  if [[ "${SHELL:-}" = "$zsh_path" ]]; then ok "zsh already default"; return; fi
+
+  # chsh prompts for your user password (not sudo). On clusters with LDAP/SSO,
+  # users typically don't have a local password, so chsh hangs forever.
+  # Skip chsh unless we have sudo (which means root can chsh without password).
+  if ! have_sudo; then
+    log "no sudo (and no local password expected); skipping chsh — .bashrc trampoline handles it"
+    return
+  fi
+
+  if grep -qx "$zsh_path" /etc/shells 2>/dev/null && have chsh; then
+    log "running sudo chsh -s $zsh_path for $USER"
+    sudo chsh -s "$zsh_path" "$USER" 2>/dev/null \
+      && ok "default shell changed; takes effect on next login" \
+      || warn "chsh failed; .bashrc trampoline will handle it"
+  else
+    log "chsh not usable here; .bashrc trampoline will handle it"
+  fi
+}
+
 
 # ============================================================================
 # 10a. version-gated gitconfig keys → ~/.gitconfig.local
@@ -703,8 +822,13 @@ main() {
   printf '%s========================================%s\n' "$c_blue" "$c_rst"
 
   clone_dotfiles
-  install_bash
-  install_blesh
+  if [[ "$SHELL_FLAVOR" = bash ]]; then
+    install_bash
+    install_blesh
+  else
+    install_zsh
+    install_antidote
+  fi
   install_starship
   install_tools
   install_direnv
@@ -713,16 +837,20 @@ main() {
   install_claude_code
   install_codex
   install_herdr
-  install_atuin       # opt-in (WITH_ATUIN=1); after bash history is around
+  install_atuin       # opt-in (WITH_ATUIN=1); after zsh history is around
   install_mosh
   install_globus
   setup_github_ssh
   link_dotfiles
   setup_gitconfig_local
   patch_claude_settings
+  if [[ "$SHELL_FLAVOR" = zsh ]]; then
+    write_bashrc_trampoline
+    set_zsh_default
+  fi
 
-  printf '\n%s✓ done.%s start a new shell or run: %sexec bash -l%s\n' \
-    "$c_grn" "$c_rst" "$c_yel" "$c_rst"
+  printf '\n%s✓ done.%s start a new shell or run: %sexec %s -l%s\n' \
+    "$c_grn" "$c_rst" "$c_yel" "$SHELL_FLAVOR" "$c_rst"
 }
 
 main "$@"
