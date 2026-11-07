@@ -1,0 +1,28 @@
+# ~/.blerc — ble.sh settings (read when ble.sh is sourced from ~/.bashrc)
+# Reference: https://github.com/akinomyoga/ble.sh/blob/master/blerc.template
+
+# SHARE_HISTORY: new commands appear in other open shells immediately
+bleopt history_share=1
+bleopt history_erasedups_limit=0      # 0 = no limit (HIST_IGNORE_ALL_DUPS)
+
+# zsh-autosuggestions equivalent: grey ghost text from history.
+# Accept with Right / End / Ctrl+F; accept one word with Alt+F / Ctrl+Right.
+bleopt complete_auto_history=1
+bleopt complete_auto_complete=1
+ble-face auto_complete='fg=242'
+
+# fast-syntax-highlighting equivalent is built in (command/path/quote colours).
+
+# fzf-tab-ish completion: TAB opens a menu you can arrow through / type to filter;
+# Shift+TAB goes backwards.
+bleopt complete_menu_style=desc-raw
+bleopt complete_menu_filter=1
+bleopt complete_ambiguous=1
+ble-bind -m emacs -f TAB      'menu-complete'
+ble-bind -m emacs -f S-TAB    'menu-complete backward'
+
+# Don't spam the terminal with "[ble: exit]" etc.
+bleopt edit_marker=
+bleopt edit_marker_error=
+
+# Keep the vim-ish bits off; bash stays in emacs mode like the zsh setup.

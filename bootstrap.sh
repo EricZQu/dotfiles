@@ -26,7 +26,8 @@
 #   SKIP_GLOBUS         globus connect personal
 #   SKIP_GLOBUS_AUTH    install globus but don't pause for setup key
 #   SKIP_SSH            github ssh keygen
-#   SKIP_CHSH           don't try chsh; rely on .bashrc trampoline
+#   SKIP_BLESH          ble.sh (bash line editor: autosuggest, highlighting)
+#   BLESH_UPDATE=1      re-download ble.sh even if present
 #   ASSUME_YES=1        non-interactive mode (skip all interactive steps)
 #
 # Opt-in flags (set to 1 to enable):
@@ -99,11 +100,11 @@ pkg_install() {
 }
 
 # pixi: conda-forge packages as single-user installs (no sudo, no conda needed).
-# Provides zsh and mosh on Linux machines that don't have them.
+# Provides mosh (and a modern bash) on machines that don't have them.
 ensure_pixi() {
   have pixi && return 0
   log "installing pixi (single binary, no sudo)"
-  # NO_PATH_UPDATE: otherwise it appends to ~/.zshrc, a symlink into this repo
+  # NO_PATH_UPDATE: otherwise it appends to ~/.bashrc, a symlink into this repo
   curl -fsSL https://pixi.sh/install.sh | PIXI_NO_PATH_UPDATE=1 bash >/dev/null 2>&1 || return 1
   [[ -x "$HOME/.pixi/bin/pixi" ]] && {
     export PATH="$HOME/.pixi/bin:$PATH"
@@ -171,34 +172,46 @@ clone_dotfiles() {
 }
 
 # ============================================================================
-# 1. zsh
+# 1. bash (>= 4.3 wanted by ble.sh / the .bashrc; macOS ships 3.2)
 # ============================================================================
-install_zsh() {
-  section "zsh"
-  if have zsh; then ok "zsh present: $(zsh --version | head -1)"; return; fi
-  if pkg_install zsh; then ok "installed zsh via brew"; return; fi
-  if ensure_pixi && pixi global install zsh >/dev/null 2>&1; then
-    ln -sfn "$HOME/.pixi/bin/zsh" "$LOCAL_BIN/zsh"
-    ok "installed zsh via pixi → $LOCAL_BIN/zsh"
-    return
+install_bash() {
+  section "bash"
+  if (( BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 3) )); then
+    ok "bash present: ${BASH_VERSION}"; return
   fi
-  warn "could not install zsh without sudo; ask your sysadmin"
+  warn "bash ${BASH_VERSION} is old; installing a newer one"
+  if pkg_install bash; then
+    ln -sfn "$(brew --prefix)/bin/bash" "$LOCAL_BIN/bash"
+    ok "installed bash via brew → $LOCAL_BIN/bash"; return
+  fi
+  if ensure_pixi && pixi global install bash >/dev/null 2>&1; then
+    ln -sfn "$HOME/.pixi/bin/bash" "$LOCAL_BIN/bash"
+    ok "installed bash via pixi → $LOCAL_BIN/bash"; return
+  fi
+  warn "could not install a newer bash; the .bashrc still works, minus some ble.sh features"
 }
 
 # ============================================================================
-# 2. antidote (zsh plugin manager — replaces oh-my-zsh framework, but loads OMZ plugins)
+# 2. ble.sh (bash line editor: autosuggestions, syntax highlighting, menu
+#    completion, transient prompt). Prebuilt nightly tarball -> no make/gawk.
 # ============================================================================
-install_antidote() {
-  section "antidote"
-  local dest="$HOME/.antidote"
-  if [[ -d "$dest/.git" ]]; then
-    log "antidote present; pulling"
-    git -C "$dest" pull --ff-only --quiet || true
-  else
-    log "cloning antidote → $dest"
-    git clone --depth=1 https://github.com/mattmc3/antidote.git "$dest"
+install_blesh() {
+  [[ "${SKIP_BLESH:-0}" = "1" ]] && return
+  section "ble.sh"
+  local dest="$HOME/.local/share/blesh"
+  if [[ -f "$dest/ble.sh" && "${BLESH_UPDATE:-0}" != "1" ]]; then
+    ok "ble.sh present at $dest (BLESH_UPDATE=1 to refresh)"; return
   fi
-  ok "antidote ready"
+  local tmp; tmp="$(mktemp -d)"
+  log "downloading ble.sh nightly"
+  if curl -fsSL https://github.com/akinomyoga/ble.sh/releases/download/nightly/ble-nightly.tar.xz \
+       -o "$tmp/ble.tar.xz" && tar xJf "$tmp/ble.tar.xz" -C "$tmp"; then
+    bash "$tmp"/ble-nightly/ble.sh --install "$HOME/.local/share" >/dev/null \
+      && ok "ble.sh installed → $dest" || warn "ble.sh install failed"
+  else
+    warn "could not download ble.sh (needs curl + xz); shell still works without it"
+  fi
+  rm -rf "$tmp"
 }
 
 # ============================================================================
@@ -358,8 +371,9 @@ install_atuin() {
     return
   fi
 
-  # Import existing zsh history into local atuin DB (idempotent; atuin dedupes)
-  [[ -f "$HOME/.zsh_history" ]] && atuin import zsh >/dev/null 2>&1 || true
+  # Import existing shell history into local atuin DB (idempotent; atuin dedupes)
+  [[ -f "$HOME/.bash_history" ]] && atuin import bash >/dev/null 2>&1 || true
+  [[ -f "$HOME/.zsh_history" ]]  && atuin import zsh  >/dev/null 2>&1 || true
 
   if [[ "${SKIP_ATUIN_REGISTER:-0}" = "1" ]] || ! interactive; then
     log "skipping atuin login (run 'atuin login' manually)"
@@ -505,7 +519,7 @@ install_codex() {
   have codex && warn_root_owned codex "sudo npm uninstall -g @openai/codex"
   # On seeing another codex on PATH, the installer appends a PATH block to the
   # rc file for $SHELL. SHELL=/bin/sh steers that to ~/.profile, away from
-  # ~/.zshrc (a symlink into this repo).
+  # ~/.bashrc (a symlink into this repo).
   curl -fsSL https://chatgpt.com/codex/install.sh \
     | CODEX_NON_INTERACTIVE=1 SHELL=/bin/sh sh >/dev/null 2>&1 || true
   if [[ -x "$LOCAL_BIN/codex" ]]; then ok "codex installed (update: codex update)"; else warn "codex install failed"; fi
@@ -598,7 +612,7 @@ setup_github_ssh() {
     log "generating ed25519 key for $GITHUB_EMAIL"
     ssh-keygen -t ed25519 -C "$GITHUB_EMAIL" -f "$key" -N "" </dev/tty
   fi
-  # Don't leave the agent dangling — let zsh/ssh-agent plugin manage it later.
+  # Don't leave the agent dangling — use ghkey (see .bashrc) to load it per session.
   echo
   echo "Public key (add at https://github.com/settings/keys):"
   echo "─────────────────────────────────────────────────────"
@@ -635,60 +649,6 @@ link_dotfiles() {
   done < <(find "$src" -type f -print0)
   ok "all dotfiles symlinked"
 }
-
-# ============================================================================
-# 11. .bashrc trampoline (for servers where chsh isn't allowed)
-# ============================================================================
-write_bashrc_trampoline() {
-  section "bashrc trampoline"
-  local marker="# >>> bootstrap zsh trampoline >>>"
-  local bashrc="$HOME/.bashrc"
-  [[ -f "$bashrc" ]] || touch "$bashrc"
-  if grep -qF "$marker" "$bashrc"; then ok ".bashrc trampoline already in place"; return; fi
-  cat >> "$bashrc" <<'EOF'
-
-# >>> bootstrap zsh trampoline >>>
-# Auto-launch zsh on interactive logins where it's not the default shell
-case $- in *i*) ;; *) return ;; esac
-# a pixi-installed zsh lives in ~/.local/bin, which may not be on PATH yet here
-_zsh="$(command -v zsh || echo "$HOME/.local/bin/zsh")"
-if [ -x "$_zsh" ] && [ -z "$ZSH_VERSION" ] && [ "$SHLVL" = "1" ]; then
-  exec "$_zsh" -l
-fi
-unset _zsh
-# <<< bootstrap zsh trampoline <<<
-EOF
-  ok "added zsh trampoline to ~/.bashrc"
-}
-
-# ============================================================================
-# 12. set zsh as default shell (if possible)
-# ============================================================================
-set_zsh_default() {
-  [[ "${SKIP_CHSH:-0}" = "1" ]] && return
-  section "default shell"
-  local zsh_path; zsh_path="$(command -v zsh || true)"
-  [[ -z "$zsh_path" ]] && { warn "zsh not found, skipping"; return; }
-  if [[ "${SHELL:-}" = "$zsh_path" ]]; then ok "zsh already default"; return; fi
-
-  # chsh prompts for your user password (not sudo). On clusters with LDAP/SSO,
-  # users typically don't have a local password, so chsh hangs forever.
-  # Skip chsh unless we have sudo (which means root can chsh without password).
-  if ! have_sudo; then
-    log "no sudo (and no local password expected); skipping chsh — .bashrc trampoline handles it"
-    return
-  fi
-
-  if grep -qx "$zsh_path" /etc/shells 2>/dev/null && have chsh; then
-    log "running sudo chsh -s $zsh_path for $USER"
-    sudo chsh -s "$zsh_path" "$USER" 2>/dev/null \
-      && ok "default shell changed; takes effect on next login" \
-      || warn "chsh failed; .bashrc trampoline will handle it"
-  else
-    log "chsh not usable here; .bashrc trampoline will handle it"
-  fi
-}
-
 
 # ============================================================================
 # 10a. version-gated gitconfig keys → ~/.gitconfig.local
@@ -743,8 +703,8 @@ main() {
   printf '%s========================================%s\n' "$c_blue" "$c_rst"
 
   clone_dotfiles
-  install_zsh
-  install_antidote
+  install_bash
+  install_blesh
   install_starship
   install_tools
   install_direnv
@@ -753,17 +713,15 @@ main() {
   install_claude_code
   install_codex
   install_herdr
-  install_atuin       # opt-in (WITH_ATUIN=1); after zsh history is around
+  install_atuin       # opt-in (WITH_ATUIN=1); after bash history is around
   install_mosh
   install_globus
   setup_github_ssh
   link_dotfiles
   setup_gitconfig_local
   patch_claude_settings
-  write_bashrc_trampoline
-  set_zsh_default
 
-  printf '\n%s✓ done.%s start a new shell or run: %sexec zsh -l%s\n' \
+  printf '\n%s✓ done.%s start a new shell or run: %sexec bash -l%s\n' \
     "$c_grn" "$c_rst" "$c_yel" "$c_rst"
 }
 

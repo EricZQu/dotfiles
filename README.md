@@ -3,7 +3,7 @@
 Bootstrap script + dotfiles for fast setup on any new server.
 
 ```
-zsh + antidote + starship + claude-code + codex + herdr + uv + hf + direnv + mosh  (+ atuin, opt-in)
+bash + ble.sh + starship + claude-code + codex + herdr + uv + hf + direnv + mosh  (+ atuin, opt-in)
 ```
 
 ## Quickstart
@@ -16,9 +16,9 @@ curl -fsSL https://raw.githubusercontent.com/EricZQu/dotfiles/main/bootstrap.sh 
 
 That's it. The script:
 
-1. Installs zsh if missing (brew on macOS, pixi/conda-forge on Linux)
+1. Checks for bash ≥ 4.3 (installs one via brew/pixi if the system bash is older, e.g. macOS)
 2. Clones this repo to `~/.dotfiles`
-3. Installs the antidote plugin manager
+3. Installs [ble.sh](https://github.com/akinomyoga/ble.sh) (prebuilt nightly → `~/.local/share/blesh`)
 4. Installs Starship (single binary to `~/.local/bin`)
 5. Installs modern CLI tools: jq, fzf, zoxide, eza, bat, ripgrep
 6. Installs direnv, uv, hf cli, claude code, codex, herdr
@@ -27,8 +27,6 @@ That's it. The script:
 9. Installs Globus Connect Personal and (if interactive) prompts for setup key
 10. Generates a github SSH key and prints the pubkey
 11. Symlinks every file under `home/` into `$HOME`
-12. Adds a `.bashrc` trampoline that auto-launches zsh on machines where chsh isn't allowed
-13. Tries `chsh -s /usr/bin/zsh`
 
 Everything is **idempotent** — re-running on an existing server just updates what changed.
 
@@ -37,8 +35,7 @@ Everything is **idempotent** — re-running on an existing server just updates w
 without root and nothing ends up root-owned. If an old sudo install of
 claude/codex/herdr is found, bootstrap installs a user-local copy that shadows it
 (`~/.local/bin` is first on `PATH`) and tells you how to remove the old one. The
-script refuses to run under `sudo`. The only remaining sudo use is `chsh`, and only
-when passwordless sudo is already available.
+script refuses to run under `sudo`. There is no `chsh` step: bash stays your login shell.
 
 ## Repository layout
 
@@ -47,8 +44,8 @@ dotfiles/
 ├── bootstrap.sh                  # the installer (run via curl|bash)
 ├── README.md
 └── home/                         # mirrors $HOME; everything here gets symlinked
-    ├── .zshrc
-    ├── .zsh_plugins.txt          # antidote plugin list (compiled to .zsh_plugins.zsh on first shell)
+    ├── .bashrc
+    ├── .blerc                    # ble.sh settings (autosuggest, menu completion, history)
     ├── .gitconfig                # identity + modern git defaults + delta config
     └── .config/
         ├── starship.toml
@@ -79,25 +76,35 @@ Pass these as env vars when running bootstrap, e.g. `SKIP_GLOBUS=1 bash bootstra
 | `SKIP_GLOBUS=1` | skip globus |
 | `SKIP_GLOBUS_AUTH=1` | install globus but don't prompt for setup key |
 | `SKIP_SSH=1` | skip github SSH keygen |
-| `SKIP_CHSH=1` | don't try chsh; rely on .bashrc trampoline |
+| `SKIP_BLESH=1` | skip ble.sh |
+| `BLESH_UPDATE=1` | re-download ble.sh even if already installed |
 
 ## What's where
 
 ### Prompt: Starship
 
 P10k-lean inspired, two-line, transient. Config in `home/.config/starship.toml`.
-The transient prompt feature (replace previous prompts with a minimal version
-after Enter) is wired up in `home/.zshrc` via zsh's `zle` hooks — Starship
-itself doesn't have native zsh transient support but this emulates p10k.
+The transient prompt (replace previous prompts with a minimal `❯` after Enter)
+comes from ble.sh's `bleopt prompt_ps1_final`, set in `home/.bashrc`. Without
+ble.sh you still get the full Starship prompt, just not the collapsing.
 
-### Plugins: antidote (loads OMZ plugins)
+### Line editor: ble.sh (replaces antidote + zsh plugins)
 
-Antidote replaces oh-my-zsh as the framework but loads OMZ plugins natively.
-Result: same plugin list you're used to (git, extract, copy*, uv, etc.)
-but ~5–10× faster shell startup.
+| zsh setup | bash setup |
+|---|---|
+| zsh-autosuggestions | ble.sh auto-complete (grey ghost text; Right/End/Ctrl+F accepts) |
+| fast-syntax-highlighting | ble.sh built-in highlighting |
+| fzf-tab | `Tab` opens a ble.sh menu (arrows / type to filter); fzf `**<Tab>` |
+| `SHARE_HISTORY` etc. | `bleopt history_share=1`, `HISTCONTROL=ignoreboth:erasedups` |
+| OMZ `git` | the aliases listed in `.bashrc` (`ga gaa gc gcmsg gst gb gf gsw …`) |
+| OMZ `extract`, `copypath`, `copyfile`, `copybuffer` | same names in `.bashrc`; `copybuffer` is `Ctrl+O` |
+| OMZ `history`, `cp`, `python` | `h`, `hs`, `cpv`, `pyfind`, `pygrep`, `pyclean` |
+| OMZ `uv` | `uv`/`uvx` completions |
+| OMZ `sublime`, `pip`, `macos` | not ported |
 
-The plugin list lives at `home/.zsh_plugins.txt`. Edit it and start a new
-shell — antidote rebuilds the compiled bundle automatically.
+Settings: `home/.blerc`. Options: `bleopt` (see ble.sh's `blerc.template`).
+`AUTO_PUSHD` has no bash equivalent. If ble.sh isn't installed, `.bashrc` falls
+back to plain readline + the fzf shell scripts.
 
 ### Modern CLI tools
 
@@ -109,7 +116,6 @@ shell — antidote rebuilds the compiled bundle automatically.
 | delta | diff pager | git diff/log/show (configured in .gitconfig) |
 | zoxide | cd | `cd foo` jumps to most-used dir matching foo (overrides cd!) |
 | fzf | — | `Ctrl+T` for files, `Ctrl+R` for history (overridden by atuin if installed) |
-| fzf-tab | tab menu | tab now opens a fuzzy interactive picker |
 | direnv | manual venv activation | drop a `.envrc` containing `layout uv` |
 | atuin *(opt-in)* | shell history | `Ctrl+R` for fuzzy + cross-machine sync |
 | mosh | ssh | `mosh server` for sessions that survive network changes |
@@ -212,8 +218,8 @@ Atuin is **not** installed by default. To opt in on a machine:
 WITH_ATUIN=1 bash ~/.dotfiles/bootstrap.sh
 ```
 
-`.zshrc` only hooks atuin in when the binary is present, so machines without it
-keep plain zsh history with fzf on `Ctrl+R`. To turn it off again on a machine
+`.bashrc` only hooks atuin in when the binary is present (and ble.sh is loaded), so machines without it
+keep plain bash history with fzf on `Ctrl+R`. To turn it off again on a machine
 that has it: `rm ~/.local/bin/atuin` (and `rm -rf ~/.atuin` to uninstall).
 
 Sync points at `https://api.atuin.sh` (their hosted server, free, E2E
@@ -264,7 +270,7 @@ loginctl enable-linger $USER   # makes user-systemd survive logout (needs sudo o
 
 Two escape hatches for things that should NOT be in version control:
 
-- `~/.zshrc.local` — sourced at the end of `.zshrc`. Put cluster-specific
+- `~/.bashrc.local` — sourced at the end of `.bashrc`. Put cluster-specific
   module loads, weird `PATH` additions, etc. here. Untracked.
 - `.envrc` per-project — for project-specific `CUDA_VISIBLE_DEVICES`,
   `WANDB_PROJECT`, `HF_HOME`, etc.
@@ -285,12 +291,12 @@ bash ~/.dotfiles/bootstrap.sh
 
 ## Troubleshooting
 
-**`exec zsh -l` fails after bootstrap.** Check that `zsh` is on `PATH`:
-`which zsh`. Without a system zsh, bootstrap installs one via pixi into
-`~/.local/bin/zsh`; if that failed, try `pixi global install zsh` by hand.
+**No autosuggestions / highlighting.** ble.sh isn't loaded: check
+`ls ~/.local/share/blesh/ble.sh`; if missing, run `bash ~/.dotfiles/bootstrap.sh`
+(needs `curl` and `xz`). `BLESH_UPDATE=1` pulls a fresh nightly. On bash < 4 (macOS
+`/bin/bash`), bootstrap installs a newer bash into `~/.local/bin` and `.bashrc` hops into it.
 
-**Plugins don't load.** Antidote compiles plugin source on first shell startup.
-If it's stale, delete `~/.zsh_plugins.zsh` and start a new shell.
+**First prompt prints "updating tput cache".** Normal; ble.sh builds a per-TERM cache once.
 
 **`codex`/`claude` runs an old version or can't update.** It's probably a
 root-owned `sudo npm i -g` copy earlier on `PATH`. Run `which -a codex`, make sure
@@ -309,7 +315,7 @@ plus `loginctl enable-linger`.
 
 **Conda doesn't activate fast enough.** The OMZ `python` plugin and Starship's
 `conda` module both probe conda; if your `conda init` block is heavy, consider
-moving it into `~/.zshrc.local` and lazy-loading.
+moving it into `~/.bashrc.local` and lazy-loading.
 
 ## Editing on a server
 
@@ -317,7 +323,7 @@ Real files live in `~/.dotfiles/home/`. The files in `$HOME` are symlinks.
 So:
 
 ```bash
-vim ~/.zshrc                 # actually edits ~/.dotfiles/home/.zshrc
+vim ~/.bashrc                 # actually edits ~/.dotfiles/home/.bashrc
 cd ~/.dotfiles && git diff   # see your change
 git commit -am "tweak" && git push
 # on every other machine: cd ~/.dotfiles && git pull
